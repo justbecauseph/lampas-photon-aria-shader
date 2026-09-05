@@ -115,6 +115,7 @@ uniform float time_midnight;
 #include "/include/utility/encoding.glsl"
 #include "/include/utility/random.glsl"
 #include "/include/utility/space_conversion.glsl"
+#include "/include/misc/voxy_merged_depth.glsl"
 
 #if defined LPV_VL && defined COLORED_LIGHTS
 uniform sampler3D light_sampler_a;
@@ -134,17 +135,20 @@ void main() {
 
 #ifdef LOD_MOD_ACTIVE
     mat4 projection_matrix, projection_matrix_inverse;
-    bool is_lod;
     float depth_lod = texelFetch(lod_depth_tex, view_texel, 0).x;
 
-    if (depth0 == 1.0) {
-        is_lod = true;
+#ifdef VOXY
+    bool is_lod = is_voxy_surface(depth0, depth_lod);
+#else
+    bool is_lod = depth0 == 1.0;
+#endif
+
+    if (is_lod) {
         depth0 = depth_lod;
         depth1 = depth_lod;
         projection_matrix = lod_projection_matrix;
         projection_matrix_inverse = lod_projection_matrix_inverse;
     } else {
-        is_lod = false;
         projection_matrix = gbufferProjection;
         projection_matrix_inverse = gbufferProjectionInverse;
     }

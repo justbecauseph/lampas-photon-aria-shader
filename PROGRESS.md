@@ -588,3 +588,49 @@
   - `git diff --check`: Clean (0 whitespace or newline errors).
 - **Subsystem & Working Tree Isolation**:
   - `git diff --name-only` confirmed only `shaders/program/c1_blend_layers.fsh` and `PROGRESS.md` were modified.
+
+---
+
+## Phase B3.2 — Restore Voxy Volumetric Fog with Merged Depth (Completed)
+
+### Scope
+
+- Resolve the hard rectangular volumetric fog defect appearing around the vanilla/Voxy coverage boundary when `"excludeLodsFromVanillaDepth": false` is enabled.
+- Root Cause: In `shaders/program/c0_vl.fsh`, LOD terrain was classified using `depth0 == 1.0`. With merged Voxy depth, `depthtex0` contains Voxy depth values (`< 1.0`), causing Voxy terrain pixels to be incorrectly treated as vanilla Minecraft geometry and reconstructed with `gbufferProjectionInverse` rather than `lod_projection_matrix_inverse` (`vxProjInv`). This produced broken view/world-space coordinates and a discontinuous `world_end_pos` for raymarched fog at the render-distance threshold.
+- Extract the view-space Voxy surface ownership logic into a shared helper include:
+  - `shaders/include/misc/voxy_merged_depth.glsl`
+  - Loaded after `space_conversion.glsl` (preventing circular dependencies while providing `screen_to_view_space_depth`).
+- Update `shaders/program/c0_vl.fsh`:
+  - Under `#ifdef VOXY`, classify `is_lod` using `is_voxy_surface(depth0, depth_lod)`.
+  - Preserve `depth0 == 1.0` for Distant Horizons / non-Voxy configurations.
+  - When Voxy owns the surface (`is_lod == true`), use `depth_lod`, `lod_projection_matrix`, and `lod_projection_matrix_inverse` (`vxProjInv`).
+- Update `shaders/program/c1_blend_layers.fsh`:
+  - Consume shared `voxy_merged_depth.glsl` and remove local copy of `is_voxy_surface` without behavioral alterations.
+- Maintain subsystem isolation:
+  - Do not revert `excludeLodsFromVanillaDepth: false`.
+  - Do not globally modify `is_lod_terrain()` in `lod_mod_support.glsl`.
+  - Leave Distant Horizons and non-Voxy pipelines completely unaffected.
+
+### Acceptance Criteria
+
+1. **Fog Discontinuity Eliminated**: Giant rectangular fog block around vanilla/Voxy transition disappears; volumetric fog is continuous across chunk boundaries.
+2. **Distant Atmospheric Haze**: Voxy distant terrain receives correct volumetric scattering and transmittance based on physical distance.
+3. **Vanilla Foreground Priority**: Vanilla terrain in front of Voxy continues to receive correct vanilla fog endpoints.
+4. **Subsystem Preservation**: Phase B3.1 distant water, Phase P9.1 under-island atmospheric scattering, and Camerapture hardware occlusion remain fully functional.
+5. **Weather & Diurnal Continuity**: Raymarched fog behaves seamlessly across clear, rain, sunrise, noon, sunset, and midnight.
+6. **Integrity & Linting**: `tools/validate_wrappers.py` passes (118 wrappers, 23 toggles); `git diff --check` passes cleanly with 0 whitespace errors.
+
+### Summary of Completed Work
+
+- Created `shaders/include/misc/voxy_merged_depth.glsl` providing `is_voxy_surface(depth_world, depth_voxy)`.
+- Updated `shaders/program/c1_blend_layers.fsh` to include `voxy_merged_depth.glsl` and removed duplicate function definition.
+- Updated `shaders/program/c0_vl.fsh` to include `voxy_merged_depth.glsl` and use `is_voxy_surface(depth0, depth_lod)` under `#ifdef VOXY`.
+- Verified that `world_end_pos` is now reconstructed with Voxy's native projection and unquantized depth whenever Voxy owns the pixel.
+
+### Validation
+
+- **Automated Validation**:
+  - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
+  - `git diff --check`: Clean (0 whitespace or newline errors).
+- **Subsystem & Working Tree Isolation**:
+  - Confirmed changes are restricted strictly to `shaders/include/misc/voxy_merged_depth.glsl`, `shaders/program/c0_vl.fsh`, `shaders/program/c1_blend_layers.fsh`, and `PROGRESS.md`.

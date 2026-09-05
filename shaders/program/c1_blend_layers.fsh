@@ -138,6 +138,7 @@ uniform float time_midnight;
 #include "/include/utility/encoding.glsl"
 #include "/include/utility/fast_math.glsl"
 #include "/include/utility/space_conversion.glsl"
+#include "/include/misc/voxy_merged_depth.glsl"
 
 #ifdef WORLD_OVERWORLD
 #include "/include/fog/overworld/analytic.glsl"
@@ -202,30 +203,6 @@ vec4 smooth_filter(sampler2D sampler, vec2 coord) {
     coord = (coord - 0.5) / res;
     return texture(sampler, coord);
 }
-
-#if defined LOD_MOD_ACTIVE && defined VOXY
-bool is_voxy_surface(float depth_world, float depth_voxy) {
-    if (depth_voxy >= 1.0) {
-        return false;
-    }
-
-    if (depth_world >= 1.0) {
-        return true;
-    }
-
-    float z_world = screen_to_view_space_depth(
-        gbufferProjectionInverse,
-        depth_world
-    );
-    float z_voxy = screen_to_view_space_depth(
-        lod_projection_matrix_inverse,
-        depth_voxy
-    );
-
-    float epsilon = max(0.001 * z_voxy, 0.1);
-    return z_voxy <= z_world + epsilon;
-}
-#endif
 
 void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
