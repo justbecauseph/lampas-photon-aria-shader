@@ -213,7 +213,7 @@
   - Do NOT touch `shaders/settings.glsl`.
   - Do NOT touch `shaders/program/d1_clouds.fsh`.
   - Do NOT touch `shaders/program/d2_clouds_upscaling.fsh` (temporal reprojection geometry left for P6).
-  - Do NOT touch `shaders/include/lighting/cloud_shadows.glsl` (shadow geometry left for P5).
+  - Do NOT touch `shaders/include/lighting/cloud_shadows.glsl` (shadow geometry left for P7).
   - Do NOT touch `shaders/world0/` or `shaders/aria/` wrappers.
   - Leave `SEA_LEVEL`, `CLOUDS_SCALE`, `CLOUDS_CUMULUS_ALTITUDE`, and `CLOUDS_CUMULUS_THICKNESS` untouched.
 
@@ -255,3 +255,57 @@
   - Wrapper & property parity suite (`tools/validate_wrappers.py`): **PASSED** (118 wrappers, 23 mirrored toggles)
   - Subsystem isolation: `git diff --name-only` confirmed only `shaders/include/sky/clouds/constants.glsl` and `PROGRESS.md` were modified.
 - `git diff --check`: clean (0 whitespace or newline errors).
+
+---
+
+## Phase P5 — Apply & Validate Aria Geometry in Primary Cloud Renderer (Completed)
+
+### Scope
+
+- Validate that the primary cloud pass (`shaders/program/d1_clouds.fsh`) correctly consumes the centralized Aria cloud geometry ($Y \in [64, 68]$) introduced in Phase P4 without requiring ad-hoc camera origin alterations.
+- Execute validation-first diagnostic sequence in live game across altitude strata:
+  - $Y < 64$ (e.g. $Y=60$): cloud deck appears overhead.
+  - $Y \in [64, 68]$: camera traverses the active volumetric cloud deck.
+  - $Y \in [68, 80+]$: cloud deck appears below camera.
+  - $Y \in [150, 375]$: floating-island stratum remains completely free of dense cumulus.
+- Isolate the root cause of the bright checkerboard/speckled fragments observed in screenshot 3:
+  - Test view with **Temporal Upscaling** set to `1` (`Off`) vs `4` (`16×`).
+  - If speckling vanishes at `1`, the primary renderer in `d1_clouds.fsh` is functional, proving the artifact is caused by temporal reprojection / accumulation in `d2_clouds_upscaling.fsh` (to be addressed in Phase P6).
+  - If speckling persists at `1`, investigate thin-shell primary raymarching behavior in `d1_clouds.fsh` / `common.glsl`.
+- Restore normal user settings (`CLOUDS_TEMPORAL_UPSCALING=4`) following diagnostic testing.
+- Strictly isolate Phase P5: do not modify `d2_clouds_upscaling.fsh` (P6) or `cloud_shadows.glsl` (P8).
+
+### Acceptance Criteria
+
+1. **Altitude Layering Validated**: In-game visual confirmation across key altitudes ($Y=60$, $Y=64\text{--}68$, $Y=80+$, $Y=150\text{--}375$) matches expected cloud ocean positioning relative to the player.
+2. **Terrain Envelope Clear**: Main floating island stratum ($Y \in [150, 375]$) confirmed free of dense cumulus volume.
+3. **Artifact Diagnosis Completed**: Defect in screenshot 3 classified as either temporal upscaling artifact (P6) or primary thin-shell raymarching artifact (P5) via `CLOUDS_TEMPORAL_UPSCALING=1` test.
+4. **Subsystem Isolation Maintained**: No premature edits to `d2_clouds_upscaling.fsh` or `cloud_shadows.glsl`. Zero code changes required for `d1_clouds.fsh`.
+
+### Summary of Completed Work
+
+- Verified that `shaders/program/d1_clouds.fsh` cleanly consumes the Phase P4 Aria constants without code changes.
+- Conducted live in-game boundary testing across altitude strata in `lampas:aria` under clear and weather conditions.
+- Executed diagnostic comparison between `CLOUDS_TEMPORAL_UPSCALING=1` (`Off`) and `CLOUDS_TEMPORAL_UPSCALING=4` (`16×`).
+- Proved that the bright checkerboard/speckled artifacts in Screenshot #3 originate exclusively from temporal history reconstruction in `d2_clouds_upscaling.fsh`, completely disappearing when temporal upscaling is set to `Off`.
+- Confirmed that the primary cumulus renderer in `d1_clouds.fsh` is mathematically and visually correct.
+- Updated project roadmap in `PLAN.md` to order P6 (temporal reprojection) before P7 (cloud layers/weather audit) and P8 (cloud shadows).
+
+### Validation
+
+- **Boundary Stratum Invariants (with Temporal Upscaling Off)**:
+  - **$Y=60$**: Cloud ocean deck appears cleanly overhead.
+  - **$Y=66$**: Player traverses directly through the $Y \in [64, 68]$ volumetric cloud deck.
+  - **$Y=80$**: Cloud ocean deck appears below player as intended.
+- **Island Stratum Observations**:
+  - **$Y=151$**: Base of lowest production island structures completely clear of cloud fog.
+  - **$Y=180$**: Prior upstream cumulus base ($Y=183$) completely clear; no cloud intrusion into terrain.
+  - **$Y=237$**: Middle island stratum clear; atmospheric horizon intact.
+  - **$Y=350$**: Upper island stratum clear of cumulus; no volume swallowing structures.
+  - **$Y=583$**: High atmosphere clear above islands; distant cloud deck visible far below.
+- **Temporal Artifact Isolation**:
+  - `CLOUDS_TEMPORAL_UPSCALING=1` (`Off`): Speckling and checkerboard squares eliminated entirely.
+  - `CLOUDS_TEMPORAL_UPSCALING=4` (`16×`): Identified 4×4 history invalidation failure when cloud occupancy changes across pixel/layer boundaries.
+  - Defect confirmed as Phase P6 scope (`d2_clouds_upscaling.fsh`); zero changes needed in `d1_clouds.fsh`.
+- **Subsystem & Working Tree Isolation**:
+  - Zero shader code files modified in P5.

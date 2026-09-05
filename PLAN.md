@@ -1,6 +1,6 @@
-Yes. Now that Photon itself lives in a dedicated repo, the plan gets much cleaner. We no longer need a runtime patcher, ZIP fingerprint patch application, or changes in `lampas-aria` just to accommodate Photon. `lampas-photon-aria-shader` becomes the **actual maintained Photon v1.3b derivative for Aria**. That is already how the repo README describes its purpose. 
+Yes. Now that Photon itself lives in a dedicated repo, the plan gets much cleaner. We no longer need a runtime patcher, ZIP fingerprint patch application, or changes in `lampas-aria` just to accommodate Photon. `lampas-photon-aria-shader` becomes the **actual maintained Photon v1.3b derivative for Aria**. That is already how the repo README describes its purpose.
 
-Also, P0 and P1 are already completed: the upstream v1.3b baseline is imported byte-for-byte, the conflict math was audited, and the repo is ready for the dimension mapping work. 
+Also, P0 and P1 are already completed: the upstream v1.3b baseline is imported byte-for-byte, the conflict math was audited, and the repo is ready for the dimension mapping work.
 
 One important correction from the earlier plan: now that we have the exact Photon source, the cloud math is clearer. Photon constructs its ray origin as `CLOUDS_SCALE * (eyeAltitude - SEA_LEVEL) + planet_radius`, while the cumulus shell is `planet_radius + CLOUDS_CUMULUS_ALTITUDE`.   Therefore for Aria Y=64 with `SEA_LEVEL=63` and `CLOUDS_SCALE=10`, the correct shader-space cumulus base is **10**, not 1280:
 
@@ -31,7 +31,7 @@ That should be the implementation target.
 
 ## Agent execution contract
 
-The agent must obey the repository's `AGENTS.md` exactly: material progress goes into `PROGRESS.md`; substantial work gets scope + acceptance criteria before implementation; after **each completed phase**, commit and push; then **STOP for code review**. It must not continue automatically into the next phase. 
+The agent must obey the repository's `AGENTS.md` exactly: material progress goes into `PROGRESS.md`; substantial work gets scope + acceptance criteria before implementation; after **each completed phase**, commit and push; then **STOP for code review**. It must not continue automatically into the next phase.
 
 For every phase, the execution pattern is:
 
@@ -337,248 +337,280 @@ Push and **STOP**.
 
 ---
 
-# P5 — Apply Aria geometry to the primary cloud renderer
+### P5 — Close primary cumulus renderer validation
 
-Now make sure the visible cloud pass actually uses the centralized shell correctly.
+**Goal:** Prove the visible primary renderer is correct and requires no code changes.
 
-Photon's `d1_clouds.fsh` currently constructs the cloud-space camera origin using:
+Most of this is already demonstrated:
 
-```glsl
-CLOUDS_SCALE * (eyeAltitude - SEA_LEVEL) + planet_radius
-```
+- old Y183–303 cumulus intersection is gone;
+- Y150–375 island space is clear of the primary layer;
+- Temporal Upscaling `Off/1` removes the checkerboard artifact;
+- therefore `d1_clouds.fsh` itself is not the source of that artifact.
 
-and then feeds that into `draw_clouds()`. 
-
-That camera mapping itself is correct and should generally **remain unchanged**.
-
-The thing we're moving is the cloud shell relative to that coordinate system.
-
-### Validate at these eye altitudes
+Do one final boundary test with Temporal Upscaling **Off**:
 
 ```text
-Y -40
-Y 0
-Y 60
-Y 64
-Y 68
-Y 100
-Y 150
-Y 200
-Y 330
+Y60 → cloud deck above
+Y66 → inside Y64–68 cloud volume
+Y80 → cloud deck below
 ```
 
-Expected:
+No shader modifications unless those three fail.
+
+Record the previous Y151/Y180/Y237/Y350/Y583 tests and the temporal-off comparison in `PROGRESS.md`.
+
+**Commit:**
 
 ```text
-Below 64:
-    cloud ocean visible above player
-
-64–68:
-    player traverses cloud volume
-
-Above 68:
-    cloud ocean below player
-
-150–375:
-    islands remain clear of primary cumulus
-```
-
-### Check terrain intersection
-
-Specifically reproduce the screenshot location/scene that originally exposed the problem.
-
-Required result:
-
-```text
-NO dense Photon cumulus inside main/high islands.
-```
-
-### Commit
-
-```text
-Render Aria cumulus below the floating islands
+Validate Aria primary cumulus renderer
 ```
 
 Push and **STOP**.
 
 ---
 
-# P6 — Fix temporal cloud reprojection
+# P6 — Fix Aria temporal cloud reconstruction
 
-This needs its own phase because Photon duplicates some cloud-radius assumptions inside temporal upscaling.
+This phase needs a slight redesign from the old plan.
 
-In `d2_clouds_upscaling.fsh`, Photon currently redeclares:
+The old plan focused on this stale-looking declaration in `d2_clouds_upscaling.fsh`:
 
 ```glsl
 const float clouds_cumulus_radius =
     planet_radius + CLOUDS_CUMULUS_ALTITUDE;
 ```
 
-and independently reconstructs camera altitude using `eyeAltitude - SEA_LEVEL`. 
+But the function's actual wind-layer selection does not use it; it selects using the altocumulus and cirrus radii. So replacing that variable with the Aria radius alone would accomplish essentially nothing.
 
-That duplicated radius is now a compatibility hazard.
+### Actual goal
 
-### Goal
+Fix the **4×4 temporal/checkerboard history rejection** when cloud occupancy changes across a pixel or layer boundary.
 
-Make temporal reprojection use the same canonical cloud geometry as the renderer.
+The current reconstruction can replace 15/16 pixels with reprojected history:
 
-### Implementation
-
-Remove/rework the local duplicate where practical and consume the shared Aria-aware constants.
-
-Do not create two slightly different Aria formulas.
-
-### Test
-
-Fly rapidly:
-
-- vertically through Y64;
-- horizontally above the deck;
-- Elytra boost while looking backward;
-- rapid camera rotation;
-- dimension transition then immediately fly.
-
-Look for:
-
-```text
-ghost clouds at Y183
-smearing
-history trails
-popping
-wrong wind layer classification
-stale old-altitude cloud frames
+```glsl
+if (offset_0 != offset_1 && !disocclusion) {
+    current = history;
+    apparent_distance =
+        min(apparent_distance, apparent_distance_history);
+    ambient_scattering = history_data.z;
+}
 ```
 
-### Required invariant
+Yet history is currently invalidated mainly for screen/terrain disocclusion, hand rendering, NaNs, and world-age changes—not because the current cloud sample and historical cloud sample fundamentally disagree.
 
-Renderer and reprojection must both agree that primary Aria cumulus occupies:
+### P6 investigation
+
+Do **not** rely on exact apparent-distance sentinel equality. Photon isn't completely uniform:
 
 ```text
-Y 64–68
+clouds_not_hit.apparent_distance = 1e5
+some zero-density raymarch results = 1e6
 ```
 
-### Commit
+
+
+The better signals are probably:
 
 ```text
-Use Aria cloud geometry for temporal reprojection
+current.a                  cloud transmittance
+history.a                  historical transmittance
+apparent_distance
+apparent_distance_history
+pixel_age
+disocclusion
+```
+
+Prototype an Aria-only rejection rule around **cloud-presence disagreement and/or major apparent-distance discontinuity**.
+
+Conceptually:
+
+```glsl
+#ifdef WORLD_ARIA
+
+bool current_has_cloud = /* transmittance/visibility test */;
+bool history_has_cloud = /* corresponding history test */;
+
+bool cloud_history_invalid =
+    current_has_cloud != history_has_cloud;
+
+cloud_history_invalid |=
+    /* meaningful distance discontinuity if both contain cloud */;
+
+disocclusion |= cloud_history_invalid;
+
+#endif
+```
+
+Don't pick arbitrary thresholds and ship them immediately. Test them.
+
+Also remove the unused local `clouds_cumulus_radius` while here if static analysis confirms it is truly dead, but treat that as cleanup—not the fix.
+
+### P6 test matrix
+
+Test Temporal Upscaling:
+
+```text
+Off / 1
+4× / 2
+9× / 3
+16× / 4
+```
+
+At least test:
+
+```text
+clear
+rain
+thunder
+
+stationary
+fast horizontal flight
+fast vertical flight
+rapid camera spin
+Elytra boost looking backward
+```
+
+And specifically revisit approximately:
+
+```text
+Y64–68
+Y383–431
+Y663–753
+Y726 screenshot scene
+```
+
+The Y726 range matters because that is actually around Photon's current cirrus altitude, so the temporal bug may be a generic layer-boundary problem rather than something uniquely caused by the tiny Y64–68 cumulus shell.
+
+**Acceptance:**
+
+```text
+16× temporal upscaling clean
+no bright checkerboard squares
+no persistent ghost clouds
+no excessive shimmer caused by over-invalidating history
+no large FPS/GPU regression
+Overworld behavior unchanged
+```
+
+**Commit:**
+
+```text
+Fix Aria cloud temporal history reconstruction
 ```
 
 Push and **STOP**.
 
 ---
 
-# P7 — Fix cloud shadows
+# P7 — Audit and harden every remaining cloud layer
 
-Photon already includes the shared cloud constants inside:
+This is the old P8, moved ahead of shadows.
 
-```text
-include/lighting/cloud_shadows.glsl
-```
+We now have live evidence that this phase is necessary.
 
-and uses `clouds_cumulus_radius` / `clouds_cumulus_top_radius` to fade shadows based on whether terrain is above the layer. 
+### Current Photon geometry
 
-That means part of this may already become correct automatically after P4 — but it must be verified rather than assumed.
+The current relevant geometry is roughly:
 
-### Goal
+| Layer | Current effective world range | Problem |
+|---|---:|---|
+| Primary cumulus | **Y64–68 in Aria** | Fixed |
+| Cumulus congestus | approx **Y103–1383** | Huge volume; must audit |
+| Altocumulus / altostratus | approx **Y383–431** | Only ~8 blocks above high-island envelope |
+| Cirrus | approx **Y663–753** | Safely above islands, but directly relevant around Y726 |
+| Noctilucent | ~Y8063 | Irrelevant to island intersection |
 
-No phantom cloud shadows from the old Y183–303 volume.
-
-### Validate
-
-At:
-
-```text
-terrain Y 50
-terrain Y 64
-terrain Y 80
-terrain Y 150
-terrain Y 220
-terrain Y 330
-```
-
-Expected:
-
-- cloud shadows apply below the cloud layer;
-- island surfaces above Y68 should not behave as though embedded inside the cumulus shell;
-- shadow map samples correspond to the visible cloud deck;
-- no dark floating bands at the former Photon altitude.
-
-### Implementation rule
-
-Only modify `cloud_shadows.glsl` if shared constants alone are insufficient.
-
-Its current ray construction still includes:
-
-```glsl
-eyeAltitude - SEA_LEVEL
-```
-
-which is expected and consistent with the cloud coordinate system. 
-
-Don't replace that simply because Aria's worldgen sea level is -64.
-
-### Commit
-
-If changes were necessary:
+The alarming one is **cumulus congestus**. Stock Photon defines:
 
 ```text
-Align Aria cloud shadows with relocated cumulus
+CLOUDS_CUMULUS_CONGESTUS_ALTITUDE = 400
+CLOUDS_CUMULUS_CONGESTUS_THICKNESS = 32
 ```
 
-If no code change is necessary, record validation in `PROGRESS.md`; don't manufacture a meaningless code change.
+and constructs its own independent spherical shell.
 
-Push documentation commit if appropriate and **STOP**.
-
----
-
-# P8 — Audit all other cloud layers
-
-Photon source contains:
+That translates to approximately:
 
 ```text
-cumulus
+base = 63 + 400 / 10
+     = Y103
+
+thickness = (400 × 32) / 10
+          = 1280 blocks
+
+top = Y1383
+```
+
+It is distance-limited and weather/blend-dependent, so that does **not** mean the entire world is constantly buried in it—but its geometry absolutely crosses the entire Aria island band.
+
+Altocumulus remains at `3200` shader units with `0.15` thickness, i.e. roughly Y383–431.
+
+Cirrus is currently based around `6000`, putting it near Y663; with the existing thickness formula its band extends roughly to Y753.
+
+### Weather explains your thunder screenshot
+
+Photon explicitly turns layer 1 toward **altostratus** under high wind/humidity, and cirrus amount also increases with `rainStrength`.
+
+That's why `/weather thunder` is such a useful torture test.
+
+### P7 policy
+
+Classify every cloud path:
+
+```text
+A — dense volume that must stay out of Y150–375
+B — thin/high decorative cloud that may remain
+C — primary-cloud variant that should inherit Aria geometry
+D — inactive/optional path that still needs a safe Aria behavior
+```
+
+Audit:
+
+```text
+primary cumulus
 cumulus congestus
 altocumulus
+altostratus weather state
 cirrus
+cirrocumulus
 noctilucent
-blocky clouds
-weather clouds
-```
-
-in its shared shader tree. 
-
-The original screenshot proves the primary cumulus is wrong, but other layers could independently intersect the islands.
-
-### Policy
-
-Classify each layer as one of:
-
-```text
-A. Dense layer — must not intersect Y150–375
-B. Thin/high decorative layer — may remain above islands
-C. Replacement/variant of primary cumulus — must inherit Aria geometry
-D. Not active under current Photon preset — still verify code path
-```
-
-Particularly inspect:
-
-```text
-CLOUDS_ALTOCUMULUS_ALTITUDE
-CLOUDS_CIRRUS_ALTITUDE
-cumulus_congestus
 BLOCKY_CLOUDS
-weather/clouds.glsl
+weather-generated cloud parameters
 ```
 
-### Do not
+### Likely decisions
 
-Do not blindly force every layer to Y64.
+**Altocumulus/altostratus:** probably needs adjustment. Y383 is simply too close to high islands ending around Y375, especially when thunder turns it into a dense sheet. Either lift it clearly above the dimension's island/build space or reduce the dense altostratus component specifically for `WORLD_ARIA`.
 
-Aria can still have high wispy clouds if they look intentional.
+**Congestus:** definitely deserves special treatment. Don't blindly attach its current 1280-block vertical tower to the new Y64 deck. Good options are to suppress congestus in Aria, redesign it as distant horizon weather, or give it an Aria-specific shell that cannot consume the island stratum.
 
-Only **dense terrain-obscuring volumes** must be kept out of the island strata.
+**Cirrus:** probably leave it high. It provides useful high-cloud structure and is well above the islands. Only change it if the Y663–753 live tests reveal an actual problem.
 
-### Commit
+**Noctilucent:** almost certainly leave alone.
+
+**Blocky clouds:** when enabled, make sure their Aria path honors the intended deck rather than resurrecting an unrelated Overworld altitude.
+
+Test clear/rain/thunder at:
+
+```text
+Y100
+Y150
+Y220
+Y330
+Y375
+Y400
+Y494
+Y583
+Y663
+Y726
+Y760
+```
+
+**Acceptance:** no dense weather layer materially obscures the Y150–375 islands.
+
+**Commit:**
 
 ```text
 Harden Photon cloud layers for Aria
@@ -588,40 +620,89 @@ Push and **STOP**.
 
 ---
 
-# P9 — Aria atmosphere and fog audit
+# P8 — Validate cloud shadows against final cloud geometry
 
-Only now inspect the rest of the Overworld inheritance.
+This is the old P7, intentionally moved after P7.
 
-Since Aria wrappers retain:
+That ordering matters because `cloud_shadows.glsl` renders cumulus, congestus, altocumulus and cirrus. Validating shadows and *then* moving those layers would make the shadow validation stale.
+
+The good news is that the shadow code already consumes the shared cloud constants, including the Aria-aware primary cumulus radii.
+
+### Validate
+
+Terrain around:
+
+```text
+Y50
+Y64
+Y80
+Y150
+Y220
+Y330
+Y375
+Y400
+```
+
+Under:
+
+```text
+clear
+rain
+thunder
+morning
+noon
+sunset
+```
+
+Look for:
+
+```text
+phantom shadows at old Y183–303
+dark horizontal bands
+upper-cloud shadows projected from wrong altitude
+islands treated as if inside cloud volume
+mismatch between visible cloud and its ground shadow
+```
+
+Only change `cloud_shadows.glsl` if the final shared geometry isn't sufficient.
+
+Do **not** change:
 
 ```glsl
-WORLD_OVERWORLD
+eyeAltitude - SEA_LEVEL
 ```
 
-Photon will continue using:
+merely because Aria worldgen uses `sea_level = -64`.
+
+If no shader change is needed, record a validation-only commit.
+
+**Commit if code changes:**
 
 ```text
-Overworld atmosphere
-sky scattering
-sun/moon
-stars
-weather
-ambient lighting
+Align Aria cloud shadows with final cloud geometry
 ```
 
-This is desirable.
+Push and **STOP**.
 
-### Test matrix
+---
 
-Inspect:
+# P9 — Atmosphere, horizon and fog audit
+
+By this point cloud geometry should be finished.
+
+This phase now has some actual evidence already: several of your lower-altitude screenshots show a very dark/black lower hemisphere underneath the floating islands. That may or may not be desirable, but it belongs here—not in the cloud phases.
+
+Test:
 
 ```text
-Y -40   arrival corridor
-Y 0     lower atmosphere
-Y 64    cloud deck
-Y 100   clear sky
-Y 200   main islands
-Y 330   high islands
+Y-40
+Y0
+Y64
+Y100
+Y150
+Y220
+Y330
+Y400
 ```
 
 At:
@@ -635,24 +716,23 @@ rain
 thunder
 ```
 
-Look for:
+Inspect:
 
-- black void below the islands;
-- horizon darkening;
-- excessive atmosphere near Y=-64;
-- strange exposure below cloud level;
-- wrong celestial rendering;
-- fog discontinuities.
+```text
+black void beneath islands
+horizon seam
+sky-ground treatment
+fog below islands
+exposure changes crossing the cloud deck
+sun/moon
+stars
+rain/thunder atmosphere
+distant Voxy terrain blending
+```
 
-### Rule
+Keep `WORLD_OVERWORLD` inheritance. Add `WORLD_ARIA` atmosphere branches **only for defects you can reproduce**.
 
-Only introduce `WORLD_ARIA` atmospheric overrides for **observed defects**.
-
-Do not turn this phase into an artistic rewrite of Photon.
-
-### Commit
-
-If fixes are needed:
+**Commit if needed:**
 
 ```text
 Tune Photon atmosphere for Lampas Aria
@@ -662,50 +742,45 @@ Push and **STOP**.
 
 ---
 
-# P10 — Dimension transition hardening
+# P10 — Dimension-transition hardening
 
-This matters a lot for Lampas because Aria is not entered through a conventional portal.
+Now hammer the actual Lampas transition behavior.
 
-Run actual:
+At least ten cycles:
 
 ```text
-Overworld -> Aria
-Aria -> Overworld
+Overworld → Aria
+Aria → Overworld
 ```
 
-sky-seam transitions.
-
-Repeat at least 10 cycles.
-
-### Verify
+Also:
 
 ```text
-world0 -> aria shader switch
-aria -> world0 shader switch
-
-no stale temporal cloud history
-no stale shadow data
-no flashing old cloud altitude
-no black frame
-no frozen exposure
-no program compilation error
-no shader state leakage
-```
-
-Also test:
-
-```text
-/teleport or /lampas goto
+commands
 actual ascent seam
 actual descent seam
-Elytra momentum transition
+Elytra crossing at speed
+crossing while raining
+crossing while thunder
+crossing then immediately spinning camera
 ```
 
-Photon must remain visually stable even during fast camera motion immediately after the dimension switch.
+Verify:
 
-### Commit
+```text
+correct world0 ↔ aria program switch
+no old cloud history
+no old weather layer history
+no stale shadow map
+no exposure flash
+no black frame
+no old Y183–303 clouds for one frame
+no Voxy/Iris pipeline corruption
+```
 
-Any required fixes:
+Any history-clearing fix discovered here should be narrowly tied to dimension/pipeline transitions.
+
+**Commit:**
 
 ```text
 Harden Photon state across Aria transitions
@@ -715,81 +790,68 @@ Push and **STOP**.
 
 ---
 
-# P11 — Automated structural regression suite
+# P11 — Consolidated automated regression validator
 
-Now add repository-native validation.
+Turn the ad-hoc phase validators into one repository-native suite.
 
-A simple Python or shell validation tool is enough; this does not require a heavyweight build system.
-
-Suggested:
+For example:
 
 ```text
 tools/validate.py
 ```
 
-### Tests
-
-Validate:
+It should cover:
 
 ```text
-dimension.properties maps lampas:aria
+dimension.properties routing
 
-aria wrapper inventory == world0 wrapper inventory
+world0 ↔ aria wrapper inventory parity
+WORLD_ARIA macro placement
+program include existence
+program.world0 ↔ program.aria toggle parity
 
-every Aria Overworld wrapper contains:
-    WORLD_OVERWORLD
-    WORLD_ARIA
+Aria primary cloud math:
+  base 64
+  top 68
 
-Aria wrappers retain identical /program/... include targets
+stock Photon math:
+  base 183
+  top 303
 
-world0 contains no WORLD_ARIA
+final P7 layer contracts
 
-world-1 contains no WORLD_ARIA
+no accidental WORLD_ARIA in vanilla wrappers
 
-world1 contains no WORLD_ARIA
+known non-Aria formulas remain unchanged
+
+P6 temporal invariants / forbidden stale patterns
 ```
 
-Add cloud math regression:
+Keep `validate_wrappers.py` if useful, or have the new top-level validator invoke it.
+
+Optional GitHub Actions:
 
 ```text
-base:
-63 + 10 / 10 = 64
-
-top:
-63 + (10 + 40) / 10 = 68
+python tools/validate.py
 ```
 
-And preserve the bug calculation as documentation/test:
+on pushes/PRs.
+
+**Commit:**
 
 ```text
-old:
-63 + 1200 / 10 = 183
-63 + 2400 / 10 = 303
-```
-
-That makes it obvious why someone must not casually replace the Aria constants with upstream defaults later.
-
-### Optional CI
-
-Add GitHub Actions to run this validator on push/PR.
-
-It should be fast and dependency-light.
-
-### Commit
-
-```text
-Add Aria shader compatibility regression checks
+Add Aria shader regression validator
 ```
 
 Push and **STOP**.
 
 ---
 
-# P12 — Cross-dimension visual regression
+# P12 — Cross-dimension visual and performance regression
 
-Before release, verify the derivative hasn't broken Photon elsewhere.
+Compare the derivative against pristine Photon v1.3b.
 
-Compare stock imported Photon v1.3b against current derivative in:
+Dimensions:
 
 ```text
 Overworld
@@ -798,205 +860,148 @@ End
 Aria
 ```
 
-### Hard requirement
+Overworld/Nether/End should remain visually equivalent except for unavoidable implementation-neutral differences.
 
-For:
+For Aria compare:
 
 ```text
-Overworld
-Nether
-End
+Temporal Upscaling 1 vs 4
+clear vs rain vs thunder
+low deck vs islands vs high atmosphere
+Voxy near/far terrain
 ```
 
-the shader behavior should be unchanged.
-
-Ideally the only functional additions are reachable through:
-
-```glsl
-#ifdef WORLD_ARIA
-```
-
-or the new Aria wrapper directory.
-
-### Performance
-
-Compare Aria before/after:
+Track:
 
 ```text
 FPS
-GPU frame time
-cloud rendering
-cloud shadow pass
-VRAM
+GPU/frame time if available
+obvious cloud cost
+shader reload time
+memory/VRAM anomalies
 ```
 
-The relocation itself should have essentially zero meaningful runtime cost.
+P6 must not “fix” the checkerboard problem by accidentally destroying temporal reuse and making clouds 16× more expensive.
 
-### Commit
+If no code change is necessary, make this validation-only.
 
-Only if test-driven fixes are required.
-
-Then push and **STOP**.
+Push and **STOP**.
 
 ---
 
-# P13 — Packaging and release
+# P13 — Package and release
 
-Because this repo contains the complete shader source, **drop the old plan's patch-installer/version-fingerprint system**.
+No runtime patcher.
 
-The repository itself pins the upstream baseline. That is much cleaner.
+Ship this repository as the actual derivative shaderpack.
 
-Build:
+Build something like:
 
 ```text
 Photon-v1.3b-Lampas-Aria.zip
 ```
 
-with:
+Zip structure:
 
 ```text
-ZIP ROOT
-├── LICENSE
-└── shaders/
-    ├── dimension.properties
-    ├── shaders.properties
-    ├── aria/
-    ├── world0/
-    ├── world-1/
-    ├── world1/
-    ├── include/
-    └── program/
+shaders/
+LICENSE
+README.md    optional/useful
 ```
 
-Do not generate:
+Not:
 
 ```text
-Photon-v1.3b-Lampas-Aria.zip/
-    lampas-photon-aria-shader/
-        shaders/
+Photon-v1.3b-Lampas-Aria/
+    shaders/
 ```
 
-unless Iris explicitly supports that nesting.
+if that extra nesting prevents Iris recognizing the pack.
 
-### Provenance
+Then install the **ZIP itself** into `.minecraft-lampas` and run a final smoke test. Don't rely only on the development junction.
 
 Record:
 
 ```text
-Based on Photon v1.3b
-Upstream baseline commit/hash
-Tested Minecraft: 26.2
-Tested Iris: 1.11.2+mc26.2
-Target dimension: lampas:aria
+Photon base: v1.3b
+Iris tested: 1.11.2+mc26.2
+Minecraft: 26.2
+Aria dimension: lampas:aria
+SHA-256 of release ZIP
 ```
 
-The repo already records that it is a v1.3b derivative and that its imported source matches the original artifact. 
-
-### Suggested tag
+Suggested tag:
 
 ```text
 v1.3b-lampas-aria.1
 ```
 
-### Commit
-
-```text
-Prepare Photon v1.3b Lampas Aria release
-```
-
-Push and **STOP before tagging/releasing** unless the user explicitly authorized release publication.
+Push/review before actually tagging if you want to preserve the current review discipline.
 
 ---
 
-# P14 — Documentation and maintenance contract
+# P14 — Documentation and upstream-maintenance contract
 
-Update README with:
-
-```text
-Installation
-Supported Iris version
-Supported Minecraft version
-Required Lampas Aria version/contract
-Why upstream Photon fails
-Aria cloud geometry
-Known limitations
-Upstream Photon attribution
-```
-
-Document explicitly:
+Finish README/docs with:
 
 ```text
-Lampas Aria dimension contract
-
-id:           lampas:aria
-cloud base:   Y64
-cloud top:    Y68 in this Photon derivative
-terrain:      primarily Y150–375
+what this fork is
+why stock Photon breaks Aria
+Iris dimension routing
+WORLD_ARIA architecture
+primary cloud Y64–68 contract
+upper-cloud decisions
+weather behavior
+installation
+supported versions
+known limitations
+known stock Photon preprocessor diagnostic
+attribution/license
+release process
 ```
 
-And explain that future upstream Photon updates are **manual rebases**, not blind upgrades.
-
-For Photon v1.3c or v1.4:
+Document future Photon upgrades as:
 
 ```text
-1. Import/compare new upstream
-2. Re-run cloud consumer audit
-3. Port WORLD_ARIA specialization
-4. Run validator
-5. Run visual matrix
-6. Run transition tests
-7. Release new derivative version
+import/rebase new upstream Photon
+re-audit changed cloud implementation
+recreate/check aria wrappers
+run validator
+run temporal tests
+run clear/rain/thunder matrix
+run transition tests
+run cross-dimension regression
 ```
 
-Do not assume the P4 constants or P6 reprojection layout remain unchanged upstream.
+Do **not** promise that a future Photon version is compatible just because the wrapper tree still applies.
 
 ---
 
-## One optional preliminary cleanup
+## New dependency chain
 
-Your current `PROGRESS.md` appears to contain some malformed escaping/control-character-looking text in GitHub's returned content. The important data is there, but some values render oddly. 
-
-Before P2, the agent should first inspect the raw local file. **If the corruption actually exists on disk**, do a tiny docs-only phase:
+So from **right now**, I'd run:
 
 ```text
-P1.1 — Normalize PROGRESS.md formatting
+P5  finish primary-renderer validation
+ ↓
+P6  fix temporal/checkerboard reconstruction
+ ↓
+P7  finalize ALL cloud-layer geometry + weather behavior
+ ↓
+P8  validate shadows against that final geometry
+ ↓
+P9  atmosphere/fog/horizon
+ ↓
+P10 dimension transitions
+ ↓
+P11 automated regression suite
+ ↓
+P12 visual/performance regression
+ ↓
+P13 packaging/release
+ ↓
+P14 docs/upstream maintenance
 ```
-
-with no shader changes, then commit/push/STOP.
-
-If the raw file is fine and this is only connector rendering, skip it.
-
----
-
-# Revised responsibility split
-
-This is the big architectural simplification:
-
-```text
-lampas-aria
-│
-├── owns the dimension
-├── owns Y ranges/worldgen
-├── owns vanilla no-shader rendering fixes
-└── does NOT know Photon exists
-
-lampas-photon-aria-shader
-│
-├── owns Iris dimension.properties
-├── owns shaders/aria/
-├── owns WORLD_ARIA
-├── owns Photon cloud relocation
-├── owns Photon-specific atmosphere fixes
-└── ships as the Lampas-compatible Photon derivative
-```
-
-I would **not modify `lampas-aria` at all for the initial Photon work**. Its existing Y64 cloud contract is already correct. The shader derivative should adapt to the dimension, not the other way around.
-
-And with the source now available, the most important implementation rule for the agent is:
-
-> **Keep Photon's coordinate system and `SEA_LEVEL=63` intact. Move only the Aria cumulus shell to `planet_radius + 10` with thickness `40`, selected at compile time by `WORLD_ARIA`. Then make every dependent Photon subsystem consume that same geometry.**
-
-That is much smaller and safer than the earlier uniform/sea-level approaches.
 
 # Refs:
 - C:\Users\markj\source\repos\lampas-aria
