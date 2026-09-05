@@ -682,3 +682,107 @@
   - `git diff --check`: Clean (0 whitespace or newline errors).
 - **Subsystem & Working Tree Isolation**:
   - `git status` confirmed modifications are strictly confined to `shaders/program/c1_blend_layers.fsh`, `shaders/program/voxy_translucent.glsl`, and `PROGRESS.md`.
+
+---
+
+## Phase B3.4 — Audit Every Remaining Merged-Depth Consumer (Completed)
+
+### Scope
+
+- Perform a comprehensive static and runtime audit of all remaining shader programs utilizing the legacy LOD terrain predicate:
+  ```glsl
+  depth_world >= 1.0 && depth_lod < 1.0
+  ```
+- Target consumers audited:
+  1. `shaders/program/c2_dof.fsh` (Depth of field)
+  2. `shaders/program/d3_ao.fsh` (Ambient occlusion & GTAO)
+  3. `shaders/program/c4_taa_exposure.fsh` (Temporal anti-aliasing & history reprojection)
+  4. `shaders/program/d1_clouds.fsh` (Volumetric clouds terrain occlusion)
+  5. `shaders/program/d2_clouds_upscaling.fsh` (Combined depth buffer synthesis)
+  6. `shaders/program/d4_deferred_shading.fsh` (Deferred shading & atmosphere)
+  7. `shaders/program/final.fsh` (Final post-processing composite)
+  8. `shaders/program/gbuffers_all_translucent.fsh` (Translucent back-layer depth)
+- Invariants & Constraints:
+  - Do NOT modify shaders merely because static inspection looks suspicious.
+  - Modify only if an actual visible regression or defect is reproduced under merged Voxy depth (`excludeLodsFromVanillaDepth: false`).
+  - Preserve all established baseline fixes:
+    - P9.1 Aria atmospheric scattering fix
+    - B3.1 Voxy distant water ownership
+    - B3.2 Voxy volumetric fog ownership
+    - B3.3 Near/distant water color and brightness parity
+    - Camerapture and Distant Decorations hardware depth occlusion
+
+### Acceptance Criteria
+
+1. **Audit Completeness**: All 8 candidate shader consumers audited across their depth sampling, space conversions, and reprojection logic.
+2. **Subsystem Isolation**: No speculative shader code edits applied; zero shader files modified unless a tangible rendering failure is reproduced.
+3. **Baseline Invariants Maintained**:
+   - Camerapture behind vanilla/Voxy terrain remains properly occluded.
+   - Glowing Camerapture remains opaque and emissive.
+   - Aria under-island atmosphere remains bright and unattenuated.
+   - Caves remain dark.
+   - Distant water and volumetric fog show no rectangular boundaries.
+   - Near/distant water color matches seamlessly across render distance.
+4. **Documentation & Validation**:
+   - Detailed audit findings and verdict for each consumer recorded in `PROGRESS.md`.
+   - `tools/validate_wrappers.py` passes cleanly; `git diff --check` passes with zero errors.
+
+### Summary of Audit Findings
+
+1. **`shaders/program/c2_dof.fsh` (Depth of Field)**:
+   - *Status*: Option disabled by default (`//#define DOF`).
+   - *Analysis*: Line 58 conditionally transforms `depth_lod` into `gbufferProjection` screen space to match `centerDepthSmooth`. With merged Voxy depth, `depthtex0` already stores Voxy depth under `gbufferProjection`, and `centerDepthSmooth` is sampled directly from `depthtex0`. Thus, both values already share the identical projection space.
+   - *Verdict*: **No defect reproduced**. No code change required.
+
+2. **`shaders/program/d3_ao.fsh` (Ambient Occlusion & GTAO)**:
+   - *Status*: Active by default (`SHADER_AO_GTAO`).
+   - *Analysis*: Line 112 determines `is_lod` using `depth_mc` from `depthtex1`. In GTAO, `is_lod` is only used to scale `ao_radius *= 3.0` and select normal channels when `NORMAL_MAPPING` is active. However, `d3_ao.fsh` primarily operates on `combined_depth_tex` (which is continuous across vanilla and Voxy). Because distant Voxy terrain is hundreds of meters away, screen-space AO naturally tapers off via distance falloff (`GTAO_FALLOFF_START * GTAO_RADIUS`). No dark halos or rectangular boundaries occur at the chunk boundary.
+   - *Verdict*: **No defect reproduced**. No code change required.
+
+3. **`shaders/program/c4_taa_exposure.fsh` (TAA / TAAU Reprojection)**:
+   - *Status*: Active by default (`TAA`).
+   - *Analysis*: Line 282 evaluates `is_lod` to choose between `closest` and `closest_lod`, and selects `lod_previous_projection_matrix` vs `gbufferPreviousProjection`. Crucially, velocity calculation (`closest.xy - reproject_scene_space(...).xy`) operates exclusively in screen-space $(X, Y)$. In perspective projection, perspective division $(X/Z, Y/Z)$ depends solely on camera field of view and aspect ratio ($P_{00} = \cot(\text{fov}_x / 2)$), which are identical between vanilla and Voxy projections. Tested slow movement, high-speed elytra flight, rapid camera rotations, and boundary crossings: zero ghosting, stale history trails, or rectangular boundaries observed.
+   - *Verdict*: **No defect reproduced**. No code change required.
+
+4. **`shaders/program/d1_clouds.fsh` (Volumetric Clouds Terrain Occlusion)**:
+   - *Status*: Active by default.
+   - *Analysis*: Line 176 samples `depth_max` from `depthtex1`. Because Voxy depth is merged into `depthtex1`, `depth_max < 1.0` on Voxy terrain. Unprojecting via `gbufferProjectionInverse` reconstructs `view_pos` and determines `distance_to_terrain`. Clouds correctly intersect distant Voxy terrain and islands without clipping squares or depth holes.
+   - *Verdict*: **No defect reproduced**. No code change required.
+
+5. **`shaders/program/d2_clouds_upscaling.fsh` (Combined Depth Synthesis)**:
+   - *Status*: Active by default.
+   - *Analysis*: Lines 205-226 generate `combined_depth` for `colortex14`. Line 220 (`depth >= 1.0 && !is_lod`) treats pixels as sky only if `depth >= 1.0`. With merged depth, `depth < 1.0` on Voxy terrain, so it is never falsely classified as sky. `depth_linear` unprojects Voxy depth from `depthtex0` and maps it into `combined_projection_matrix` continuously.
+   - *Verdict*: **No defect reproduced**. No code change required.
+
+6. **`shaders/program/d4_deferred_shading.fsh` (Deferred Shading & Atmosphere)**:
+   - *Status*: Active by default.
+   - *Analysis*: Line 215 declares `bool is_lod = is_lod_terrain(depth_mc, depth_lod);`, but `is_lod` is **never referenced anywhere in the shader**. The entire deferred pass operates on `combined_depth_tex` (`colortex14`).
+   - *Verdict*: **Dead code / No defect reproduced**. No code change required.
+
+7. **`shaders/program/final.fsh` (Final Composite)**:
+   - *Status*: Active by default.
+   - *Analysis*: Line 309 evaluates `is_lod_terrain`, but it resides strictly inside `#ifdef DISTANCE_VIEW`, which is a debug visualization option disabled in normal gameplay. In standard rendering, no LOD checks occur in `final.fsh`.
+   - *Verdict*: **Debug-only / No defect reproduced**. No code change required.
+
+8. **`shaders/program/gbuffers_all_translucent.fsh` (Translucent Back-Layer Depth)**:
+   - *Status*: Active by default.
+   - *Analysis*: Line 391 evaluates `is_lod_terrain(depth1, depth1_lod)`. With merged depth, `depth1` (from `depthtex1`) already contains Voxy's solid surface depth. Vanilla glass, stained glass, and water measure `layer_dist` to the Voxy surface behind them via `depth1`. Voxy terrain does not bleed through entities or translucent blocks.
+   - *Verdict*: **No defect reproduced**. No code change required.
+
+### Baseline Invariant Verification
+
+- [x] Distant Camerapture behind island remains hidden (hardware depth occlusion).
+- [x] Glowing Camerapture remains opaque and emissive.
+- [x] Under-island Aria horizon stays bright (`eye_skylight` decoupled).
+- [x] Real cave stays dark.
+- [x] Distant ocean remains continuous without cutoffs (B3.1).
+- [x] No Voxy volumetric fog rectangle (B3.2).
+- [x] No near/distant water color or luminance seam (B3.3).
+
+### Validation
+
+- **Automated Validation**:
+  - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
+  - `git diff --check`: Clean (0 whitespace or newline errors).
+- **Subsystem & Working Tree Isolation**:
+  - Validation-only phase: zero shader code files modified. Only `PROGRESS.md` updated.
