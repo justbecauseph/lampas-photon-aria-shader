@@ -35,6 +35,21 @@ float get_cloud_shadows(sampler2D cloud_shadow_map, vec3 scene_pos) {
 #ifndef CLOUD_SHADOWS
     return 1.0;
 #else
+#ifdef WORLD_ARIA
+    // Aria's low cloud layer often has no visible shadow contribution. Avoid
+    // projecting or filtering the map when the existing fade is exactly zero.
+    float r =
+        planet_radius + (scene_pos.y + eyeAltitude - SEA_LEVEL) * CLOUDS_SCALE;
+    float altitude_fraction =
+        linear_step(clouds_cumulus_radius, clouds_cumulus_top_radius, r);
+    float cloud_shadow_fade =
+        smoothstep(0.05, 0.15, light_dir.y) * clamp01(1.0 - altitude_fraction);
+
+    if (cloud_shadow_fade == 0.0) {
+        return 1.0;
+    }
+#endif
+
     vec2 cloud_shadow_pos = project_cloud_shadow_map(scene_pos) *
         vec2(cloud_shadow_res) / vec2(textureSize(cloud_shadow_map, 0));
 
@@ -45,12 +60,14 @@ float get_cloud_shadows(sampler2D cloud_shadow_map, vec3 scene_pos) {
     // fade out cloud shadows when:
     //  - the fragment is above the cloud layer
     //  - the sun is near the horizon
+#ifndef WORLD_ARIA
     float r =
         planet_radius + (scene_pos.y + eyeAltitude - SEA_LEVEL) * CLOUDS_SCALE;
     float altitude_fraction =
         linear_step(clouds_cumulus_radius, clouds_cumulus_top_radius, r);
     float cloud_shadow_fade =
         smoothstep(0.05, 0.15, light_dir.y) * clamp01(1.0 - altitude_fraction);
+#endif
 
     float cloud_shadow = bicubic_filter(cloud_shadow_map, cloud_shadow_pos).x;
     cloud_shadow = cloud_shadow * cloud_shadow_fade + (1.0 - cloud_shadow_fade);

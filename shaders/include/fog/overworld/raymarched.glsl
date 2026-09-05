@@ -90,6 +90,12 @@ mat2x3 raymarch_air_fog(
     ray_length = sky ? distance_to_volume_end : ray_length;
     ray_length = clamp(ray_length - distance_to_volume_start, 0.0, fog_end);
 
+#ifdef WORLD_ARIA
+    if (ray_length == 0.0) {
+        return mat2x3(vec3(0.0), vec3(1.0));
+    }
+#endif
+
     uint step_count = uint(
         float(air_fog_min_step_count) + air_fog_step_count_growth * ray_length
     );

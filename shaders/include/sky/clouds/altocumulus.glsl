@@ -254,6 +254,17 @@ CloudsResult draw_altocumulus_clouds(
     vec3 ray_origin =
         air_viewer_pos + ray_dir * (dists.x + step_length * dither);
 
+#ifdef WORLD_ARIA
+    if (ray_length == 0.0) {
+        // Sample once solely to preserve empty-march apparent-distance metadata.
+        float density = clouds_altocumulus_density(ray_origin);
+        float apparent_distance = density >= eps
+            ? distance(air_viewer_pos, ray_origin)
+            : 1e6; // Legacy empty march sentinel; clouds_not_hit uses 1e5.
+        return CloudsResult(vec4(0.0), 1.0, apparent_distance);
+    }
+#endif
+
     vec2 scattering = vec2(0.0); // x: direct light, y: skylight
     float transmittance = 1.0;
 

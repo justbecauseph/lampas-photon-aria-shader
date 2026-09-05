@@ -1,5 +1,45 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase PERF1 — Skip Non-contributing Aria Atmosphere Work (Completed)
+
+### Scope
+
+- Add Aria-only early returns for fully faded cloud shadows and zero-length cumulus, altocumulus, and volumetric air-fog intervals.
+- Preserve cloud apparent-distance metadata, neutral scattering/transmittance, and existing positive-length sampling behavior.
+- Delegate the independent shader changes to Luna agents, with parent review and integrated validation.
+- Keep vanilla-dimension paths, Voxy depth ownership, temporal reconstruction, sampling budgets, and cloud/fog interval clipping formulas unchanged.
+- Defer preset/AO specialization, bloom filtering, LPV gathers, and distance-dependent water quality to subsequent review phases.
+
+### Acceptance Criteria
+
+1. A zero cloud-shadow fade returns full visibility before shadow-map projection/filtering in Aria.
+2. Zero-length cumulus and altocumulus intervals avoid repeated marching while preserving apparent-distance metadata: zero accumulated density uses 1e6 in cloud-space units, while positive boundary density can retain the entry distance.
+3. Zero-length air-fog intervals return zero scattering and unit transmittance before step setup and sampling.
+4. Positive-length paths and non-Aria shader behavior remain unchanged; no cloud-shell clipping repair is bundled into this phase.
+5. Targeted numerical/source validation covers neutral outputs and boundary cases; wrapper/property validation and whitespace checks pass. Compile/runtime checks are reported only if actually performed.
+6. Record completed work and validation boundaries here, commit and push PERF1, then stop for code review.
+
+### Validation Boundary
+
+- GPU performance and live visual equivalence require client captures and are not implied by source or numerical validation.
+
+### Implementation and Review
+
+- Three Luna agents implemented isolated shader changes; a separate Luna review of the integrated four-file shader diff found no correctness regressions within the finite-input domain.
+- Aria cloud-shadow sampling returns full visibility when its unchanged altitude/light fade is exactly zero, before projection and four-fetch bicubic filtering.
+- Aria air fog returns neutral scattering/transmittance for a zero clamped interval before the minimum eight-step march.
+- Aria cumulus and altocumulus replace zero-length primary marches with one boundary-density evaluation, preserving both zero-density and positive-density apparent distances.
+- Parent review corrected the initial assumption that every zero-length cloud march records 1e6: positive entry density retains the entry distance, and cumulus coverage-map fading can restore the empty sentinel. The implementation handles all three cases.
+- The early returns intentionally avoid sampling invalid data in skipped paths; equivalence claims apply to finite valid inputs, not preservation of legacy NaN propagation.
+- No shader compiler was available on PATH. No client reload, GPU capture, live visual comparison, or measured performance claim has been made for this phase.
+
+### Validation
+
+- `python tools/validate_perf1.py`: passed 33 static/numerical checks against pre-phase revision `d6899b2`. Includes non-Aria source parity, guarded exit ordering, neutral fog/shadow outputs, density threshold equality, and cloud coverage-fade metadata cases.
+- `python tools/validate_wrappers.py`: passed 118 wrappers (109 specialized, 9 byte-identical) and all 23 mirrored program properties.
+- `git diff --check`: passed. Parent and independent Luna shader reviews completed.
+- Phase complete for code review; subsequent optimization phases remain deferred. Runtime visual checks and GPU timing remain unverified.
+
 ## Phase P0 — Photon Compatibility Reconnaissance & Baseline Math (Completed)
 
 ### Scope
