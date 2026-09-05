@@ -132,3 +132,38 @@
 
 - `python tools/validate_wrappers.py`: **PASSED** (118/118 files verified; 109 specialized with `WORLD_ARIA`, 9 byte-identical).
 - `git diff shaders/world0 shaders/program shaders/include`: zero changes.
+
+---
+
+## Phase P3.1 — Aria Program Property Parity (Completed)
+
+### Scope
+
+- Audit all `program.world0/` toggles in `shaders/shaders.properties` and mirror every entry for `program.aria/`.
+- Add dedicated `# Aria` section immediately following `# Overworld`, matching DOF, TAAU, Bloom, Motion Blur, FXAA, Intel composite17, Colored Lights (setup & shadowcomp), and SH_SKYLIGHT (deferred4_a).
+- Add `program.aria/` entries under `# Separate Entity Draws` for `MC_VERSION < 260100` compatibility (`gbuffers_entities_translucent`, `gbuffers_block_translucent`, `gbuffers_particles`, `gbuffers_particles_translucent`).
+- Enhance `tools/validate_wrappers.py` with:
+  - Strict wrapper assertions: exactly one `WORLD_OVERWORLD`, exactly one `WORLD_ARIA`, placement immediately after `WORLD_OVERWORLD`, and byte-equality upon removing that single line.
+  - Verification that every `#include "/program/..."` in `shaders/aria/` references an existing file.
+  - Property parity assertion: every `program.world0/<name>.enabled` key and preprocessor block matches `program.aria/<name>.enabled` identically.
+
+### Acceptance Criteria
+
+1. All 23 `program.world0/...` occurrences in `shaders/shaders.properties` have identical `program.aria/...` counterparts with matching RHS and preprocessor conditions.
+2. `tools/validate_wrappers.py` passes all wrapper structural checks and property parity checks with 0 errors.
+3. Live test environment configured with `lampas-photon-aria` in `iris.properties` for runtime smoke validation.
+4. No changes under `shaders/world0/`, `shaders/program/`, or `shaders/include/`.
+
+### Summary of Completed Work
+
+- Added `# Aria` block in `shaders/shaders.properties` with 19 program toggles mirroring `# Overworld`.
+- Added 4 separate-entity toggles for `program.aria/` under `MC_VERSION < 260100` block.
+- Updated `tools/validate_wrappers.py` with tightened directive placement checks, include target existence checks, and automated regex-based property parity verification.
+- Verified live symlink/junction and settings in `.minecraft-lampas\shaderpacks\lampas-photon-aria`.
+
+### Validation
+
+- `python tools/validate_wrappers.py`:
+  - `Wrapper validation SUCCESS: 118 files checked (109 specialized, 9 byte-identical). All include targets verified.`
+  - `Property parity SUCCESS: all 23 program.world0 toggles perfectly mirrored by program.aria.`
+- `git diff --check`: clean (0 whitespace/line-ending issues).
