@@ -1,0 +1,68 @@
+name: Release Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (e.g. v1.0.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Shaderpack
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate shader wrappers and property parity
+        run: python tools/validate_wrappers.py
+
+      - name: Determine tag and archive names
+        id: pkg
+        run: |
+          TAG="${{ inputs.tag_name || github.ref_name }}"
+          if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
+            TAG="latest"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "filename=lampas-photon-aria-${TAG}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Package shaderpack archive
+        run: |
+          zip -r "${{ steps.pkg.outputs.filename }}" shaders LICENSE
+          cp "${{ steps.pkg.outputs.filename }}" lampas-photon-aria.zip
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pkg.outputs.filename }}
+          path: |
+            ${{ steps.pkg.outputs.filename }}
+            lampas-photon-aria.zip
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag_name != ''
+        with:
+          tag_name: ${{ steps.pkg.outputs.tag }}
+          files: |
+            ${{ steps.pkg.outputs.filename }}
+            lampas-photon-aria.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

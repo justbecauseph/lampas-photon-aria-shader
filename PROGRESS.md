@@ -454,3 +454,46 @@
   - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
   - `git diff --check`: Clean (0 whitespace or newline errors).
   - Unrelated work in `shaders/program/d2_clouds_upscaling.fsh` preserved unstaged in working tree.
+
+---
+
+## Phase P10 — GitHub Actions Release Packaging Workflow (Completed)
+
+### Scope
+
+- Create a GitHub Actions CI/CD workflow at `.github/workflows/release.yml` to automate packaging and distribution of the `lampas-photon-aria` shaderpack.
+- Configure triggers for release tag pushes (`v*`, `[0-9]+*`) as well as manual workflow dispatch (`workflow_dispatch`).
+- Execute the automated structural validation suite (`python tools/validate_wrappers.py`) prior to packaging.
+- Package the canonical shaderpack root structure matching Iris requirements and upstream Photon distribution:
+  - Root `shaders/` tree containing all program wrappers, include libraries, and properties (`shaders.properties`, `dimension.properties`).
+  - Root `LICENSE` file.
+- Generate versioned archive `lampas-photon-aria-<tag>.zip` and unversioned convenience archive `lampas-photon-aria.zip`.
+- Publish/upload packaged zip files to GitHub Releases via `softprops/action-gh-release@v2`.
+- Upload build artifacts to GitHub Actions workflow run via `actions/upload-artifact@v4`.
+
+### Acceptance Criteria
+
+1. **Workflow File Structure**: `.github/workflows/release.yml` created with valid YAML syntax and appropriate permissions (`contents: write`).
+2. **Tag & Dispatch Triggering**: Triggers on tag pushes (`v*`, `[0-9]*`) and manual dispatch (`workflow_dispatch`).
+3. **Pre-Package Validation**: Automatically runs `python tools/validate_wrappers.py` before creating release assets.
+4. **Correct Package Hierarchy**: Archive root contains only `shaders/` and `LICENSE` without extraneous repo files (`.git/`, `.github/`, `tools/`, markdown files).
+5. **Release & Artifact Upload**: Seamlessly uploads zip files to the corresponding GitHub Release and workflow run.
+6. **Integrity & Linting**: `git diff --check` passes cleanly.
+
+### Summary of Completed Work
+
+- Created `.github/workflows/release.yml` configuring:
+  - Triggers on tag push (`v*`, `[0-9]+*`) and manual workflow dispatch (`workflow_dispatch`).
+  - Environment setup with `actions/checkout@v4` and `actions/setup-python@v5`.
+  - Automated wrapper validation check (`python tools/validate_wrappers.py`).
+  - Standard packaging of `shaders/` and `LICENSE` into `lampas-photon-aria-<tag>.zip` and `lampas-photon-aria.zip`.
+  - Release asset publishing using `softprops/action-gh-release@v2`.
+  - Build artifact upload using `actions/upload-artifact@v4`.
+- Updated `PROGRESS.md` to document the release automation.
+
+### Validation
+
+- **Local Simulation**: Verified file inventory, zip structure, and extraction matching Iris / upstream Photon layout (`shaders/` and `LICENSE` at archive root).
+- **Wrapper Validation**: Verified `python tools/validate_wrappers.py` passes cleanly.
+- **YAML Validation**: Verified `.github/workflows/release.yml` parses with zero errors.
+- **Git Hygiene**: `git diff --check` clean (0 whitespace or newline errors).
