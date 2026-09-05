@@ -358,7 +358,7 @@ void main() {
 
 #ifdef VOXY
             vec4 gbuffer_data = texelFetch(colortex16, texel, 0);
-            bool is_water = min_of(gbuffer_data) > eps;
+            bool is_water = max_of(gbuffer_data) > eps;
 #else
             vec4 gbuffer_data = texelFetch(colortex1, texel, 0);
 #endif
@@ -373,6 +373,9 @@ void main() {
             vec3 tint = vec3(data[0], data[1].x);
             vec3 flat_normal = decode_unit_vector(data[2]);
             vec2 light_levels = data[3];
+#ifdef VOXY
+            light_levels = clamp01((light_levels * 16.0 - 0.5) / 15.0);
+#endif
 
 #ifdef DISTANT_HORIZONS
             uint material_mask = uint(255.0 * data[1].y);
@@ -382,6 +385,12 @@ void main() {
 #endif
 
             if (is_water) { // Water
+                float water_view_dist =
+                    distance(lod_position_world, cameraPosition);
+                float water_layer_dist = back_depth_lod < 1.0
+                    ? distance(lod_position_world, back_position_world)
+                    : 100.0;
+
                 vec4 water_color = draw_distant_water(
                     lod_position_screen,
                     lod_position_view,
@@ -390,14 +399,8 @@ void main() {
                     flat_normal,
                     tint,
                     light_levels,
-                    length_knowing_direction(
-                        cameraPosition - lod_position_world,
-                        direction_world
-                    ),
-                    length_knowing_direction(
-                        lod_position_world - back_position_world,
-                        direction_world
-                    )
+                    water_view_dist,
+                    water_layer_dist
                 );
 
 #ifdef VOXY
@@ -405,13 +408,19 @@ void main() {
                 // water_color *= 8.0;
 #endif
 
-                fragment_color =
-                    fragment_color * (1.0 - water_color.a) + water_color.rgb;
+                if (lod_behind_translucent) {
+                    fragment_color =
+                        fragment_color * (1.0 - water_color.a) + water_color.rgb;
+                    back_position_world = lod_position_world;
+                } else {
+                    translucent_color = water_color;
+                    is_translucent = true;
+                }
+            } else {
+                back_position_world = lod_behind_translucent
+                    ? lod_position_world
+                    : back_position_world;
             }
-
-            back_position_world = lod_behind_translucent
-                ? lod_position_world
-                : back_position_world;
         }
     }
 #endif

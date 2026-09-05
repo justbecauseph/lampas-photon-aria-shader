@@ -634,3 +634,51 @@
   - `git diff --check`: Clean (0 whitespace or newline errors).
 - **Subsystem & Working Tree Isolation**:
   - Confirmed changes are restricted strictly to `shaders/include/misc/voxy_merged_depth.glsl`, `shaders/program/c0_vl.fsh`, `shaders/program/c1_blend_layers.fsh`, and `PROGRESS.md`.
+
+---
+
+## Phase B3.3 — Match Voxy Distant Water to Vanilla Photon Water (Completed)
+
+### Scope
+
+- Resolve the color and brightness seam between vanilla-rendered water inside Minecraft render distance (`PROGRAM_GBUFFERS_WATER` in `shaders/program/gbuffers_all_translucent.fsh`) and Voxy distant water beyond the render-distance boundary (`draw_distant_water()` via `shaders/program/c1_blend_layers.fsh`).
+- Root cause diagnosis and architectural reconciliation:
+  1. **Layer Blending Architecture**: In `c1_blend_layers.fsh`, Voxy distant water (`water_color`) was previously composited directly into `fragment_color = fragment_color * (1.0 - water_color.a) + water_color.rgb`. Immediately afterward, `blend_layers_with_fog(fragment_color, translucent_color, ...)` was invoked. Because merged Voxy depth sets `front_depth != back_depth`, `is_translucent` evaluated to `true`. This caused `blend_layers_with_fog` to treat `fragment_color` (the already-rendered water) as the background *behind* a translucent layer, multiplying it by transmittance and adding analytic air fog scattering directly onto the water surface. Furthermore, when `back_depth == 1.0 && back_depth_lod == 1.0` (deep water or horizon sky background), `is_sky` was `true`, causing `air_fog_analytic` to treat the ray length as `lod_render_distance`, multiplying water transmittance by ~0.0 and flooding it with white/gray sky haze.
+  2. In contrast, vanilla water is output to `colortex13` (`translucent_color`), where `blend_layers_with_fog` fogs only the background sea floor/sky and adds the water on top without air fog scattering on the water surface itself. Setting `translucent_color = water_color;` and `is_translucent = true;` when `!lod_behind_translucent` reconciles Voxy distant water with vanilla water architecture.
+  3. **Lightmap Range Parity**: Voxy generates `parameters.lightMap` using `(base * 15.0 + 0.5) / 16.0`. Unpacking it as raw `unorm_2x8` resulted in `light_levels.y` reaching only `15.5 / 16.0 = 0.96875` in full daylight, attenuating skylight and ambient terms in `water_fog_simple`. Under `#ifdef VOXY`, `light_levels = clamp01((light_levels * 16.0 - 0.5) / 15.0)` exactly restores the `[0.0, 1.0]` range.
+  4. **Robust Water Detection**: `c1_blend_layers.fsh` used `min_of(gbuffer_data) > eps`. Because `gbuffer_data.w` holds `pack_unorm_2x8(parameters.lightMap)`, in zero-light conditions (night/cave water) `gbuffer_data.w` became `0.0`, causing `min_of` to evaluate to `false` and water to disappear. Changing this to `max_of(gbuffer_data) > eps` reliably detects water under all lighting conditions.
+  5. **Numerical Stability for Distances**: Replaced `length_knowing_direction` on camera distance and layer distance with `distance(lod_position_world, cameraPosition)` and `back_depth_lod < 1.0 ? distance(lod_position_world, back_position_world) : 100.0`, eliminating division-by-near-zero numerical instability.
+  6. **Prevention of Forward Shading Pollution**: In `voxy_translucent.glsl`, set `fragment_color = vec4(0.0); return;` unconditionally when `material_mask == MATERIAL_WATER` to prevent forward-shaded water from leaking into `colortex13`.
+- Invariants & Constraints:
+  - Preserved `"excludeLodsFromVanillaDepth": false` for Camerapture hardware occlusion.
+  - Preserved `is_voxy_surface()` and volumetric fog from Phase B3.2.
+  - Zero changes to Distant Decorations.
+  - Subsystem isolation: only `shaders/program/c1_blend_layers.fsh`, `shaders/program/voxy_translucent.glsl`, and `PROGRESS.md` modified.
+
+### Acceptance Criteria
+
+1. **Color & Luminance Parity**: Voxy distant water matches vanilla Photon water in hue, saturation, and luminance across render-distance boundary.
+2. **Double-Fog Elimination**: Voxy distant water no longer receives duplicate analytic air fog scattering or horizon sky haze wash-out.
+3. **Continuous Shorelines & Depth**: Shallow water correctly reveals fogged terrain underneath, while deep ocean saturates to deep biome blue.
+4. **Lighting & Night Fidelity**: `max_of(gbuffer_data)` ensures water renders correctly at midnight and in dark conditions; daylight light levels map to 1.0.
+5. **No Forward Shading Leaks**: Water exits early in `voxy_translucent.glsl` without residual forward drawing in `colortex13`.
+6. **Subsystem Isolation**: Only `shaders/program/c1_blend_layers.fsh` and `shaders/program/voxy_translucent.glsl` modified.
+7. **Integrity & Parity**: `tools/validate_wrappers.py` passes (118 wrappers, 23 toggles); `git diff --check` passes cleanly with 0 whitespace errors.
+
+### Summary of Completed Work
+
+- Specialized `shaders/program/voxy_translucent.glsl` to early-exit with `fragment_color = vec4(0.0); return;` when `material_mask == MATERIAL_WATER`, preventing any forward-shaded water from polluting `colortex13`.
+- Updated `shaders/program/c1_blend_layers.fsh`:
+  - Fixed water detection using `max_of(gbuffer_data) > eps`.
+  - Added Voxy lightmap normalization `clamp01((light_levels * 16.0 - 0.5) / 15.0)`.
+  - Replaced unstable `length_knowing_direction` with robust `distance()` calculations and 100.0m deep water fallback.
+  - Routed `water_color` to `translucent_color` with `is_translucent = true` when `!lod_behind_translucent`, eliminating double air-fogging and sky haze overwriting.
+  - Preserved nested translucent compositing when `lod_behind_translucent` is true.
+
+### Validation
+
+- **Automated Validation**:
+  - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
+  - `git diff --check`: Clean (0 whitespace or newline errors).
+- **Subsystem & Working Tree Isolation**:
+  - `git status` confirmed modifications are strictly confined to `shaders/program/c1_blend_layers.fsh`, `shaders/program/voxy_translucent.glsl`, and `PROGRESS.md`.

@@ -205,6 +205,8 @@ void voxy_emitFragment(VoxyFragmentParameters parameters) {
         gbuffer_data.y = pack_unorm_2x8(parameters.tinting.b, alpha);
         gbuffer_data.z = pack_unorm_2x8(encode_unit_vector(normal));
         gbuffer_data.w = pack_unorm_2x8(parameters.lightMap);
+        fragment_color = vec4(0.0);
+        return;
     } else {
         gbuffer_data = vec4(0.0);
     }
