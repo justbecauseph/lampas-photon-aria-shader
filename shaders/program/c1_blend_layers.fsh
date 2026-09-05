@@ -203,6 +203,30 @@ vec4 smooth_filter(sampler2D sampler, vec2 coord) {
     return texture(sampler, coord);
 }
 
+#if defined LOD_MOD_ACTIVE && defined VOXY
+bool is_voxy_surface(float depth_world, float depth_voxy) {
+    if (depth_voxy >= 1.0) {
+        return false;
+    }
+
+    if (depth_world >= 1.0) {
+        return true;
+    }
+
+    float z_world = screen_to_view_space_depth(
+        gbufferProjectionInverse,
+        depth_world
+    );
+    float z_voxy = screen_to_view_space_depth(
+        lod_projection_matrix_inverse,
+        depth_voxy
+    );
+
+    float epsilon = max(0.001 * z_voxy, 0.1);
+    return z_voxy <= z_world + epsilon;
+}
+#endif
+
 void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
@@ -238,8 +262,13 @@ void main() {
     }
 #endif
 
+#ifdef VOXY
+    bool front_is_lod_terrain = is_voxy_surface(front_depth, front_depth_lod);
+    bool back_is_lod_terrain = is_voxy_surface(back_depth, back_depth_lod);
+#else
     bool front_is_lod_terrain = is_lod_terrain(front_depth, front_depth_lod);
     bool back_is_lod_terrain = is_lod_terrain(back_depth, back_depth_lod);
+#endif
 
     bool is_translucent_lod = front_depth_lod != back_depth_lod;
 #else
@@ -328,8 +357,13 @@ void main() {
         );
 
         const float error_margin = 1.0;
+#ifdef VOXY
+        bool lod_behind_translucent =
+            z_lod > z_mc + error_margin && (back_depth == 1.0 || back_is_lod_terrain);
+#else
         bool lod_behind_translucent =
             z_lod > z_mc + error_margin && back_depth == 1.0;
+#endif
 
         if (front_is_lod_terrain || lod_behind_translucent) {
             if (lod_behind_translucent) {

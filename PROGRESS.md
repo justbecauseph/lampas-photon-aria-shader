@@ -538,3 +538,53 @@
 
 - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
 - `git diff --check`: Clean (0 whitespace or newline errors).
+
+---
+
+## Phase B3.1 — Restore Voxy Distant Water with Merged World Depth (Completed)
+
+### Scope
+
+- Resolve the distant water cutoff regression occurring when `"excludeLodsFromVanillaDepth": false` is enabled in `voxy.json`.
+- When merged Voxy depth is enabled, Voxy transforms and copies its depth into vanilla `depthtex0` / `depthtex1`. As a result, the upstream assumption:
+  ```glsl
+  is_lod_terrain(depth, depth_lod) { return depth >= 1.0 && depth_lod < 1.0; }
+  ```
+  evaluates to `false` for distant ocean because `depth < 1.0`, skipping the `draw_distant_water` compositor path in `shaders/program/c1_blend_layers.fsh`.
+- Implement a view-space surface ownership rule (`is_voxy_surface`) specific to VOXY in `shaders/program/c1_blend_layers.fsh`:
+  - If `depth_voxy >= 1.0`, Voxy does not own the surface (`return false;`).
+  - If `depth_world >= 1.0`, Voxy owns the surface (`return true;`).
+  - Otherwise, linearize both depths to view-space distance in meters using `gbufferProjectionInverse` and `lod_projection_matrix_inverse` (`vxProjInv`).
+  - Voxy owns the surface if `z_voxy <= z_world + epsilon`, where `epsilon = max(0.001 * z_voxy, 0.1)` accommodates depth quantization while preserving millimeter/centimeter tolerance up close.
+- Apply this ownership logic to both:
+  - `front_is_lod_terrain = is_voxy_surface(front_depth, front_depth_lod);`
+  - `back_is_lod_terrain = is_voxy_surface(back_depth, back_depth_lod);`
+- Update `lod_behind_translucent` under `#ifdef VOXY` to allow translucent Voxy water behind vanilla glass when `back_depth == 1.0 || back_is_lod_terrain`.
+- Guarantee that `front_position_view/world` and `back_position_view/world` use Voxy projection (`lod_projection_matrix_inverse`) whenever the surface is owned by Voxy.
+- Preserve upstream `is_lod_terrain` for Distant Horizons / non-Voxy builds without global modifications.
+- Maintain `"excludeLodsFromVanillaDepth": false` so hardware depth occlusion for Camerapture and distant decorations remains functional.
+
+### Acceptance Criteria
+
+1. **Distant Ocean Restored**: Voxy distant water renders beyond vanilla render distance without rectangular boundaries or cutoffs.
+2. **Hardware Occlusion Intact**: Camerapture and distant decorations remain properly occluded behind Voxy terrain.
+3. **Vanilla Foreground Priority**: Closer vanilla/Sodium terrain and blocks continue to occlude Voxy water (`z_voxy <= z_world + epsilon` evaluates to false when vanilla is closer).
+4. **Entity Transparency**: Mobs, players, and entities do not render with Voxy water showing through them.
+5. **Seamless Shoreline**: Transition between vanilla water and Voxy distant water is continuous and seamless.
+6. **Subsystem Isolation**: Only `shaders/program/c1_blend_layers.fsh` modified; global `is_lod_terrain` in `lod_mod_support.glsl` and DH logic left untouched.
+7. **Integrity & Parity**: `tools/validate_wrappers.py` passes (118 wrappers, 23 toggles); `git diff --check` passes with zero whitespace errors.
+
+### Summary of Completed Work
+
+- Added `is_voxy_surface` helper in `shaders/program/c1_blend_layers.fsh` under `#if defined LOD_MOD_ACTIVE && defined VOXY`.
+- Replaced `is_lod_terrain` calls in `c1_blend_layers.fsh` with `is_voxy_surface` when `VOXY` is defined.
+- Extended `lod_behind_translucent` in `c1_blend_layers.fsh` under `VOXY` to accept `back_is_lod_terrain`.
+- Verified coordinate reconstruction: when `front_is_lod_terrain` or `back_is_lod_terrain` is true, `screen_to_view_space` uses `lod_projection_matrix_inverse` (`vxProjInv`), correctly computing `view_distance` and water layer depth.
+
+### Validation
+
+- **Automated Validation**:
+  - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
+  - `git diff --check`: Clean (0 whitespace or newline errors).
+- **Subsystem & Working Tree Isolation**:
+  - `git diff --name-only` confirmed only `shaders/program/c1_blend_layers.fsh` and `PROGRESS.md` were modified.
