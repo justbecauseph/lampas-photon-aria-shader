@@ -241,7 +241,11 @@ void main() {
 
 #ifdef VOXY
     bool front_is_lod_terrain = is_voxy_surface(front_depth, front_depth_lod);
-    bool back_is_lod_terrain = is_voxy_surface(back_depth, back_depth_lod);
+    bool back_is_lod_terrain = back_depth_lod < 1.0 && (
+        front_is_lod_terrain ||
+        is_voxy_surface(back_depth, back_depth_lod) ||
+        (is_voxy_surface(back_depth, front_depth_lod) && front_depth_lod != back_depth_lod)
+    );
 #else
     bool front_is_lod_terrain = is_lod_terrain(front_depth, front_depth_lod);
     bool back_is_lod_terrain = is_lod_terrain(back_depth, back_depth_lod);

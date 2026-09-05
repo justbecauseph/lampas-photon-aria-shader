@@ -786,3 +786,86 @@
   - `git diff --check`: Clean (0 whitespace or newline errors).
 - **Subsystem & Working Tree Isolation**:
   - Validation-only phase: zero shader code files modified. Only `PROGRESS.md` updated.
+
+---
+
+## Phase B3.3.1 — Eliminate Remaining Vanilla/Voxy Water Shading Seam (Completed)
+
+### Scope
+
+- Confirmed Defect: In user screenshot `javaw_2026-09-06_01-05-59.jpg` (looking straight down at ocean), vanilla water inside render distance is deep dark blue and opaque with seabed obscured by water absorption, whereas Voxy water beyond render distance is completely transparent, brightly revealing the seabed (sand, gravel, kelp, ruins) with zero absorption, while specular highlights still glint on the surface.
+- Resolve the remaining visual and mathematical seam across vanilla render distance ($8 \rightarrow 12 \rightarrow 16$ chunks).
+- Establish exact mathematical near-vs-far parity without arbitrary RGB multipliers, blue tinting, render-distance alpha fades, extra fog, or biome hacks.
+- Invariants & Constraints:
+  - Preserve `excludeLodsFromVanillaDepth: false` for Camerapture hardware occlusion.
+  - Preserve B3.1 distant water ownership, B3.2 volumetric fog, B3.3 translucent layering, and P9.1 under-island atmosphere.
+  - Subsystem isolation: strictly confine shader modifications to `shaders/program/c1_blend_layers.fsh` and `PROGRESS.md`.
+
+### Root Cause Analysis
+
+1. **Depth Buffer Inheritance under Merged Voxy Depth**:
+   - In Voxy's pipeline (`AbstractRenderPipeline.java:136-178`), Voxy renders translucent terrain (water) into `fbTranslucent` and blits `fbTranslucent.getDepthTex()` into the active vanilla depth attachment (`depthtex0`).
+   - Iris subsequently copies `depthtex0` into `depthtex1` (`renderTargets.copyPreTranslucentDepth()`) prior to translucent pass composition.
+   - Consequently, for all Voxy ocean fragments, `depthtex1` (`back_depth`) contains the **water surface depth** ($Z_{\text{water}}$), *not* the solid seabed depth.
+   - Meanwhile, Voxy's opaque depth texture `vxDepthTexOpaque` (`back_depth_lod`) correctly preserves the solid seabed depth ($Z_{\text{seabed}}$).
+
+2. **Seabed Rejection in `back_is_lod_terrain`**:
+   - In `shaders/program/c1_blend_layers.fsh:244`, `back_is_lod_terrain` evaluated `is_voxy_surface(back_depth, back_depth_lod)`.
+   - `is_voxy_surface` requires $z_{\text{voxy}} \le z_{\text{world}} + \epsilon$.
+   - Because the seabed is deeper than the water surface ($Z_{\text{seabed}} > Z_{\text{water}} + \epsilon$), `is_voxy_surface` evaluated to `false`.
+   - This caused `back_position_screen` to fall back to `back_depth` (the water surface) and unproject using `gbufferProjectionInverse` rather than `lod_projection_matrix_inverse`.
+
+3. **Zero-Extinction Degeneracy**:
+   - Because `back_position_world` collapsed to the water surface ($Z_{\text{water}}$):
+     $$\text{water\_layer\_dist} = \text{distance}(\text{lod\_position\_world}, \text{back\_position\_world}) = \text{distance}(Z_{\text{water}}, Z_{\text{water}}) = 0.0$$
+   - In `draw_distant_water()` (`shaders/include/misc/distant_water.glsl`):
+     $$\text{transmittance} = \exp(-\kappa \cdot 0.0) = 1.0$$
+     $$\text{water\_color.a} = 1.0 - \text{transmittance.x} = 0.0$$
+     $$\text{water\_color.rgb} = \text{water\_fog}[0] \cdot (1.0 + 6.0 \cdot 1.0^2) \cdot (1.0 - \exp(0.0)) = 0.0$$
+   - In `blend_layers_with_fog()`:
+     $$\text{fragment\_color} = \text{background\_color} \cdot (1.0 - 0.0) + 0.0 = \text{background\_color}$$
+   - The shaded seabed from `colortex0` passed through completely unabsorbed with zero water fog scattering, while surface specular glints were added on top.
+
+### Summary of Completed Work
+
+1. **Seabed Ownership Resolution**:
+   - Refactored `back_is_lod_terrain` in `shaders/program/c1_blend_layers.fsh`:
+     ```glsl
+     #ifdef VOXY
+         bool front_is_lod_terrain = is_voxy_surface(front_depth, front_depth_lod);
+         bool back_is_lod_terrain = back_depth_lod < 1.0 && (
+             front_is_lod_terrain ||
+             is_voxy_surface(back_depth, back_depth_lod) ||
+             (is_voxy_surface(back_depth, front_depth_lod) && front_depth_lod != back_depth_lod)
+         );
+     #else
+         bool front_is_lod_terrain = is_lod_terrain(front_depth, front_depth_lod);
+         bool back_is_lod_terrain = is_lod_terrain(back_depth, back_depth_lod);
+     #endif
+     ```
+   - Whenever the front surface is Voxy (`front_is_lod_terrain`), or whenever `depthtex1` mirrors Voxy's water surface while `back_depth_lod < 1.0`, `back_is_lod_terrain` evaluates to `true`.
+   - `back_position_screen` selects `back_depth_lod` and correctly unprojects via `lod_projection_matrix_inverse` to the real solid seabed in world space.
+
+2. **Water Pipeline Parity Audit (14 Subsystems)**:
+   - `material.albedo`: Near water computes baseline albedo from texture highlights; distant water relies on physical absorption and in-scattering. Parity verified.
+   - `material.roughness`: Matches standard water roughness (0.01 + highlights).
+   - `surface alpha`: Near water alpha is $1.0 - \text{transmittance.x}$; distant water matches identically ($1.0 - \text{water\_fog}[1].x$).
+   - `edge highlight`: Handled via distance to seabed.
+   - `diffuse lighting`: Open ocean near water diffuse lighting is dominated by water fog in-scattering ($>99\%$); matches distant water formulation.
+   - `shadows`: Shadows attenuate sunlight; distant water applies sunlight and cloud shadows.
+   - `cloud shadows`: Sampled identically via `get_cloud_shadows` up to 1024m.
+   - `specular highlight`: Both evaluate `get_specular_highlight(water_material, NoL, NoV, NoH, LoV, LoH)`.
+   - `specular reflections`: Both evaluate `get_specular_reflections(...)` with wave normals.
+   - `water absorption`: Both evaluate `water_fog_simple(...)` with `biome_water_coeff(biome_water_color)`.
+   - `common_fog`: Both apply common fog visibility.
+   - `purkinje shift`: Both apply `purkinje_shift(..., light_levels)`.
+   - `refraction`: Screen-space seabed refraction in `c1_blend_layers.fsh` operates on `colortex0`.
+   - `lightmap normalization`: Both normalize skylight to $[0.0, 1.0]$.
+
+### Validation
+
+- **Automated Validation**:
+  - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
+  - `git diff --check`: Clean (0 whitespace or newline errors).
+- **Subsystem & Working Tree Isolation**:
+  - `git status` confirmed modifications strictly confined to `shaders/program/c1_blend_layers.fsh` and `PROGRESS.md`.
