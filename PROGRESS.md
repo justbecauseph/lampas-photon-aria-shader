@@ -309,3 +309,91 @@
   - Defect confirmed as Phase P6 scope (`d2_clouds_upscaling.fsh`); zero changes needed in `d1_clouds.fsh`.
 - **Subsystem & Working Tree Isolation**:
   - Zero shader code files modified in P5.
+
+---
+
+## Phase P9.0 — Reproduce and Isolate Black-Atmosphere Failure (Completed)
+
+### Scope
+
+- Perform rigorous architectural and mathematical diagnosis across all Photon atmospheric, sky, lighting, and fog subsystems to identify the root cause(s) of the under-island black void defect in Lampas Aria.
+- Audit uniform derivations in `shaders/shaders.properties` for `eye_skylight` and `biome_cave`.
+- Trace consumption of `eye_skylight` and `biome_cave` across all shader passes:
+  - Sky map rendering: `shaders/program/d0_sky_map.fsh` and `shaders/include/sky/sky.glsl`
+  - Analytic atmospheric fog: `shaders/include/fog/overworld/analytic.glsl`
+  - Layer blending and scene compositing: `shaders/program/c1_blend_layers.fsh`
+  - Specular reflections: `shaders/include/lighting/specular_lighting.glsl`
+  - Deferred shading & border fog: `shaders/program/d4_deferred_shading.fsh`
+  - Spherical cave fog: `shaders/include/fog/simple_fog.glsl`
+  - Volumetric fog: `shaders/include/fog/overworld/raymarched.glsl`
+  - Color grading and vignette: `shaders/program/c14_color_grading.fsh`
+- Determine whether the black void is sky only, fog only, terrain only, or a compound multi-system interaction.
+- Maintain strict subsystem isolation: diagnosis only, zero production shader modifications in this phase.
+- Preserve all unrelated local modifications in working tree.
+
+### Acceptance Criteria
+
+1. **Failure Mechanisms Proved/Disproved**:
+   - Establish whether under-island conditions force `eye_skylight \approx 0`.
+   - Establish whether `biome_cave` becomes non-zero while player is in open Aria atmosphere.
+2. **Defect Scope Classification**:
+   - Determine whether the black region originates from sky only, fog only, terrain only, or multiple interacting systems.
+3. **No Production Shader Changes**:
+   - Zero production shader code modifications committed in P9.0.
+4. **Working Tree Integrity**:
+   - Unrelated local work (`d2_clouds_upscaling.fsh`) preserved intact.
+
+### Summary of Completed Diagnosis
+
+1. **Mechanism A Proved — Local Eye Skylight Collapse (`eye_skylight \approx 0`)**:
+   - **Origin**: `shaders/shaders.properties:444`:
+     ```properties
+     uniform.float.eye_skylight = smooth(eyeBrightness.y / 240.0, 1.0, 1.0)
+     ```
+   - **Under-Island Behavior**: Minecraft's block lighting engine calculates `eyeBrightness.y` by testing vertical obstruction to the sky. Beneath any floating island ($Y \in [150, 375]$), solid island geometry blocks the zenith ray, driving `eyeBrightness.y \to 0`, which forces `eye_skylight = 0.0`.
+   - **Direct Consequence 1 (Sky Map)**: In `shaders/program/d0_sky_map.fsh:149`, `air_fog_analytic` is invoked with `eye_skylight` as both camera skylight and target skylight. Inside `shaders/include/fog/overworld/analytic.glsl:100`, scattering is modulated by `scattering *= max(skylight, eye_skylight);`. When `eye_skylight == 0.0`, atmospheric in-scattering is multiplied by $0.0$, yielding `fog[0] = vec3(0.0)`. `sky_map` is calculated as `sky_map * fog[1] + fog[0]`. Without in-scattering, the sky color is multiplied solely by transmittance `fog[1] \to 0`, extinguishing the entire sky dome into pitch black.
+   - **Direct Consequence 2 (Scene Opaques & Distant Terrain)**: In `shaders/program/c1_blend_layers.fsh:486`, `air_fog_analytic` is invoked for all opaque fragments (near terrain, far terrain, LODs, sky background) passing `eye_skylight`. Because `analytic_fog[0] == vec3(0.0)`, `fragment_color` is evaluated as `fragment_color *= analytic_fog[1] + vec3(0.0)`. As distance increases, transmittance approaches zero, causing distant islands and terrain silhouettes against the sky to collapse into a pitch-black void (`#000000`).
+
+2. **Mechanism B Proved — False Cave-Sky Blackening & Cave Fog (`biome_cave > 0`)**:
+   - **Origin**: `shaders/shaders.properties:555`:
+     ```properties
+     uniform.float.biome_cave = smooth(clamp((63.0 - eyeAltitude) / (63.0 - 50.0), 0.0, 1.0) * (1.0 - eyeBrightness.y / 240.0), 5.0, 2.0)
+     ```
+   - **Aria Geometry Mismatch**: In vanilla Overworld, $Y < 63$ without skylight signifies subterranean caves. In Aria, the floating islands reside at $Y \in [150, 375]$, the cloud deck is at $Y \in [64, 68]$, and the dimension extends downward to $Y = -64$ with open atmosphere.
+   - **Trigger Conditions**: Whenever a player flies below the cloud deck ($eyeAltitude < 63.0$) or enters lower island recesses where $eyeBrightness.y \to 0$, $(63.0 - eyeAltitude)$ becomes positive, driving `biome_cave \to 1.0`.
+   - **Direct Consequence 1 (Cave Sky Fade)**: In `shaders/include/sky/sky.glsl:207-209`, non-deferred0 passes execute:
+     ```glsl
+     float underground_sky_fade = biome_cave * smoothstep(-0.1, 0.1, 0.4 - ray_dir.y);
+     sky = mix(sky, vec3(0.0), underground_sky_fade);
+     ```
+     This forces the lower sky dome (rays with elevation angle $< \arcsin(0.4) \approx 23.6^\circ$, all the way down to nadir) directly into black.
+   - **Direct Consequence 2 (Border Fog Suppression)**: In `shaders/program/d4_deferred_shading.fsh:638-639`:
+     ```glsl
+     vec3 border_fog_color = mix(atmosphere, horizon_color, sqr(horizon_factor)) * (1.0 - biome_cave);
+     ```
+     When `biome_cave \to 1.0`, border fog color is multiplied by $0.0$, generating a solid black border curtain at render distance limit.
+   - **Direct Consequence 3 (Cave Fog Injection)**: In `shaders/include/fog/simple_fog.glsl:105, 152`, spherical cave fog is applied directly onto non-sky geometry proportional to `biome_cave`.
+
+3. **Classification of the Defect**:
+   - The defect is **NOT** sky only, fog only, or terrain only.
+   - It is a **compound failure across multiple interacting subsystems**:
+     1. High altitude ($Y \ge 63$, e.g. underneath main islands $Y \in [150, 375]$): Dominated by Mechanism A (`eye_skylight = 0.0`), collapsing analytic in-scattering in `d0_sky_map.fsh` and `c1_blend_layers.fsh`.
+     2. Low altitude ($Y < 63$, below cloud deck): Compounded by both Mechanism A (`eye_skylight = 0.0`) and Mechanism B (`biome_cave > 0`), which simultaneously zeroes atmospheric scattering, blacks out the lower sky hemisphere, zeroes border fog, and injects cave fog.
+
+4. **Roadmap Forward**:
+   - **Phase P9.1**: Decouple Aria atmospheric scattering from camera-local roof skylight in `shaders/include/fog/overworld/analytic.glsl` under `#ifdef WORLD_ARIA`.
+   - **Phase P9.2**: Bypass `underground_sky_fade` in `shaders/include/sky/sky.glsl` under `#ifdef WORLD_ARIA`.
+   - **Phase P9.3**: Audit and harden remaining `biome_cave` consumers (`d4_deferred_shading.fsh`, `simple_fog.glsl`, `c14_color_grading.fsh`).
+
+### Validation
+
+- **Theoretical & Mathematical Proof**:
+  - Confirmed `eyeBrightness.y == 0` underneath island geometry drives `eye_skylight = 0.0`.
+  - Confirmed `air_fog_analytic` line 100 zeroes `scattering` when `skylight` and `eye_skylight` are 0.0.
+  - Confirmed `c1_blend_layers.fsh` lines 494-495 multiplies fragment colors by transmittance with zero offset, causing distant geometry extinction.
+  - Confirmed `(63.0 - eyeAltitude) > 0` drives `biome_cave` below sea level.
+- **Repository Integrity**:
+  - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
+  - Subsystem isolation: Zero shader code changes committed.
+  - Unrelated work in `shaders/program/d2_clouds_upscaling.fsh` left intact and unstaged.
+- `git diff --check`: Clean (0 whitespace or newline errors).

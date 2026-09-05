@@ -1,1007 +1,1046 @@
-Yes. Now that Photon itself lives in a dedicated repo, the plan gets much cleaner. We no longer need a runtime patcher, ZIP fingerprint patch application, or changes in `lampas-aria` just to accommodate Photon. `lampas-photon-aria-shader` becomes the **actual maintained Photon v1.3b derivative for Aria**. That is already how the repo README describes its purpose.
+Yeah. Given the current state of both repos, I’d make this a **dedicated Aria atmosphere/cave-classification phase**, not a random “increase brightness” patch.
 
-Also, P0 and P1 are already completed: the upstream v1.3b baseline is imported byte-for-byte, the conflict math was audited, and the repo is ready for the dimension mapping work.
+The important part is that this belongs primarily in **`lampas-photon-aria-shader`**. `lampas-aria` should be treated as the dimension contract/reference and should not be changed unless testing proves a vanilla-side defect. Aria already has `has_skylight: true`, `has_ceiling: false`, and `ambient_light: 0.0`; those are reasonable values for a floating-island dimension.
 
-One important correction from the earlier plan: now that we have the exact Photon source, the cloud math is clearer. Photon constructs its ray origin as `CLOUDS_SCALE * (eyeAltitude - SEA_LEVEL) + planet_radius`, while the cumulus shell is `planet_radius + CLOUDS_CUMULUS_ALTITUDE`.   Therefore for Aria Y=64 with `SEA_LEVEL=63` and `CLOUDS_SCALE=10`, the correct shader-space cumulus base is **10**, not 1280:
+Also, the agent has to obey the shader repo's `AGENTS.md`: define scope/acceptance criteria, record material work in `PROGRESS.md`, commit+push after every completed phase, and **STOP after every phase for review**.
 
-```text
-CLOUDS_SCALE × (64 - 63)
-= 10 × 1
-= 10
-```
+# Full agent plan — Fix Aria under-island blackness
 
-For a 4-block deck:
+## Execution contract
+
+Work in:
 
 ```text
-10 × 4 = 40
+justbecauseph/lampas-photon-aria-shader
 ```
 
-So the intended Aria shell is:
+Reference only:
 
 ```text
-radius    = planet_radius + 10
-thickness = 40
-
-world Y   = 64 → 68
+justbecauseph/lampas-aria
 ```
 
-That should be the implementation target.
-
-# Updated Agent Plan — `lampas-photon-aria-shader`
-
-## Agent execution contract
-
-The agent must obey the repository's `AGENTS.md` exactly: material progress goes into `PROGRESS.md`; substantial work gets scope + acceptance criteria before implementation; after **each completed phase**, commit and push; then **STOP for code review**. It must not continue automatically into the next phase.
-
-For every phase, the execution pattern is:
+Before touching shader code:
 
 ```text
-1. Read current repo + PROGRESS.md
-2. Define phase scope and acceptance criteria in PROGRESS.md
-3. Implement only that phase
-4. Validate
-5. Record results/evidence in PROGRESS.md
-6. git diff / status review
-7. commit
-8. push
-9. STOP
+1. Read AGENTS.md
+2. Read PLAN.md
+3. Read PROGRESS.md
+4. Inspect current git status
+5. Do not discard unrelated local work
+6. Add the new phase scope + acceptance criteria to PROGRESS.md
+7. Implement only that phase
+8. Validate
+9. Record evidence
+10. git diff --check
+11. git diff review
+12. commit
+13. push
+14. STOP FOR REVIEW
 ```
 
-Do not batch P2 + P3 + P4 into one run.
+Do **not** batch the phases below.
 
 ---
 
-# P2 — Iris custom-dimension routing
+# Phase P9.0 — Reproduce and isolate the black-atmosphere failure
 
 ### Goal
 
-Stop Iris from treating `lampas:aria` as generic `world0`.
+Prove which Photon systems are responsible before changing anything.
 
-### Implementation
-
-Add:
+The screenshot strongly suggests at least two independent mechanisms:
 
 ```text
-shaders/dimension.properties
+A. local eye skylight → atmospheric scattering collapse
+B. biome_cave → explicit sky-to-black operation
 ```
 
-with an explicit Aria mapping.
-
-Before committing, verify the exact syntax against the Iris version actually used by Lampas (`1.11.2+mc26.2`, already recorded in P0).
-
-Expected mapping conceptually:
+Photon currently derives:
 
 ```properties
-dimension.aria = lampas:aria
-
-dimension.world0 = minecraft:overworld *
-dimension.world-1 = minecraft:the_nether
-dimension.world1 = minecraft:the_end
+uniform.float.eye_skylight = smooth(eyeBrightness.y / 240.0, 1.0, 1.0)
 ```
 
-The wildcard must not swallow `lampas:aria`.
+so standing underneath a large island can drive the atmospheric input toward zero.
 
-### Validation
+Photon's analytic atmosphere then contains:
 
-Confirm:
+```glsl
+scattering *= max(skylight, eye_skylight);
+```
+
+
+
+And Photon independently contains the cave sky blackening:
+
+```glsl
+float underground_sky_fade =
+    biome_cave * smoothstep(-0.1, 0.1, 0.4 - ray_dir.y);
+
+sky = mix(sky, vec3(0.0), underground_sky_fade);
+```
+
+
+
+### Reproduction matrix
+
+Pick one large main island with an accessible underside.
+
+Capture the same camera direction from:
 
 ```text
-minecraft:overworld   -> world0
-lampas:aria           -> aria
-minecraft:the_nether  -> world-1
-minecraft:the_end     -> world1
+A — exposed beside island, same approximate Y
+B — just underneath island edge
+C — deep underneath island center
+D — genuinely enclosed cavity inside island
+E — open air below all island terrain
 ```
 
-Do not create `shaders/aria/` yet.
+Prefer daytime/noon first.
+
+Record:
+
+```text
+eyeAltitude
+eyeBrightness / eye_skylight if debug instrumentation is practical
+biome_cave
+weather
+time
+camera coordinates
+```
+
+Test at least:
+
+```text
+noon
+sunset
+midnight
+```
+
+Do one clear-weather pass first.
+
+### Temporary diagnostic only
+
+If useful, introduce an **uncommitted temporary debug visualization** for:
+
+```text
+R = biome_cave
+G = eye_skylight
+B = 0
+```
+
+or use existing Photon debug infrastructure.
+
+Remove diagnostic code before completing the phase.
+
+### Acceptance criteria
+
+Prove or disprove:
+
+```text
+under island:
+    eye_skylight ≈ 0
+
+and/or:
+    biome_cave becomes non-zero
+
+while:
+    the player is still in open Aria atmosphere
+```
+
+Also establish whether the black region is:
+
+```text
+sky only
+fog only
+terrain only
+or multiple systems together
+```
+
+### No production shader changes
+
+This is diagnosis only.
 
 ### Commit
 
 ```text
-Add Iris dimension mapping for Lampas Aria
+Document Aria under-island darkness diagnosis
 ```
 
 Push and **STOP**.
 
 ---
 
-# P3 — Create the Aria shader program wrappers
+# Phase P9.1 — Decouple Aria atmospheric scattering from local roof skylight
 
-This is now especially straightforward because Photon already uses extremely thin dimension wrappers. For example, `world0/deferred1.fsh` is only:
-
-```glsl
-#version 400 compatibility
-#define WORLD_OVERWORLD
-#define PROGRAM_DEFERRED1
-#define fsh
-#include "/program/d1_clouds.fsh"
-```
-
-
+This is the first actual fix.
 
 ### Goal
 
-Create an Aria dimension pipeline that behaves like the Overworld while exposing a compile-time specialization flag.
+An island above the player's head may shadow the **player and terrain**, but it must not make kilometres of surrounding atmosphere stop scattering sunlight.
+
+### Target
+
+```text
+shaders/include/fog/overworld/analytic.glsl
+```
+
+Current terminal scaling:
+
+```glsl
+scattering *= max(skylight, eye_skylight);
+```
+
+Photon applies this analytic fog directly over the sky map.
 
 ### Implementation
 
-Mirror:
+Introduce an Aria-specific atmosphere illumination factor.
 
-```text
-shaders/world0/
-```
-
-to:
-
-```text
-shaders/aria/
-```
-
-Maintain the same wrapper file set.
-
-For every relevant wrapper, retain:
+Conceptually:
 
 ```glsl
-#define WORLD_OVERWORLD
+float atmosphere_skylight = max(skylight, eye_skylight);
+
+#ifdef WORLD_ARIA
+    atmosphere_skylight = 1.0;
+#endif
+
+scattering *= atmosphere_skylight;
 ```
 
-and add:
+But before settling on exactly `1.0`, verify what the `skylight` argument represents at each caller.
 
-```glsl
-#define WORLD_ARIA
-```
-
-Example:
-
-```glsl
-#version 400 compatibility
-#define WORLD_OVERWORLD
-#define WORLD_ARIA
-#define PROGRAM_DEFERRED1
-#define fsh
-#include "/program/d1_clouds.fsh"
-```
-
-Do not copy the contents of `/program/*` into the Aria directory.
-
-### Structural validation
-
-Compare the file inventories:
+The desired semantic is:
 
 ```text
-world0/*  == aria/*
+local roof occlusion must NOT extinguish atmospheric in-scattering
 ```
 
-except for intentional cases discovered during inspection.
-
-Verify:
-
-- same program include targets;
-- same `PROGRAM_*` defines;
-- same stage defines (`fsh`, `vsh`, `csh`);
-- Aria contains `WORLD_OVERWORLD`;
-- Aria additionally contains `WORLD_ARIA`;
-- `world0` itself remains byte-for-byte unchanged.
-
-Make sure uncommon wrappers are not forgotten, including things like:
+It is **not**:
 
 ```text
-prepare.*
-deferred4_a.csh
-shadowcomp.csh
-voxy*
-dh_*
-setup.csh
+force daytime
+force white fog
+ignore sun/moon cycle
+ignore weather
+ignore blindness/darkness effects
 ```
 
-### Runtime proof
+Keep these intact:
 
-Enter Aria and ensure Photon compiles the `aria` shader directory successfully before doing any cloud modification.
+```glsl
+ambient_color
+light_color
+light_dir
+sun_dir
+rainStrength
+blindness
+darknessFactor
+evening_glow
+```
 
-At this point the visual bug should still exist. That's expected. This phase only proves routing.
+### Call-site audit
+
+Check at minimum:
+
+```text
+program/d0_sky_map.fsh
+program/c1_blend_layers.fsh
+include/lighting/specular_lighting.glsl
+```
+
+All currently feed `eye_skylight` into analytic atmosphere paths.
+
+Prefer fixing the shared implementation rather than patching every caller.
+
+### Test matrix
+
+Repeat:
+
+```text
+open sky
+under island edge
+under island center
+inside genuine enclosed cave
+```
+
+At:
+
+```text
+noon
+sunset
+midnight
+```
+
+### Expected result
+
+Underneath the island:
+
+```text
+BEFORE
+terrain silhouette → BLACK VOID
+
+AFTER
+terrain silhouette → illuminated blue/atmospheric background
+```
+
+The island underside should **remain dark**.
+
+### Regression requirements
+
+Overworld must be byte/behavior equivalent with respect to this branch:
+
+```text
+WORLD_ARIA only
+```
+
+Do not globally alter Photon's atmosphere.
+
+### Acceptance criteria
+
+- black atmospheric void substantially disappears;
+- island underside remains shadowed;
+- noon/sunset/night still visually distinct;
+- blindness/darkness still work;
+- Overworld unchanged;
+- no shader compilation/link errors.
 
 ### Commit
 
 ```text
-Add Photon shader wrappers for Lampas Aria
+Preserve Aria atmospheric scattering under floating islands
 ```
 
 Push and **STOP**.
 
 ---
 
-# P4 — Centralize Aria cloud geometry
+# Phase P9.2 — Disable false cave-sky blackening in Aria
 
-This phase should contain the architectural change, but **not yet every dependent subsystem**.
+P9.1 may fix most of the screenshot, but this one removes the second incorrect assumption.
 
-Photon currently declares the primary cloud shell centrally in:
+### Problem
+
+Photon's `biome_cave` is based partly on being below approximately vanilla sea level plus lack of skylight:
 
 ```text
-shaders/include/sky/clouds/constants.glsl
+low altitude + low skylight = cave
+```
+
+That makes sense in the Overworld.
+
+It is wrong in Aria.
+
+Aria intentionally has open atmosphere from its lower boundary upward and has floating land beginning much higher. Its main islands are approximately Y150–270 and high islands Y280–375.
+
+### Target
+
+```text
+shaders/include/sky/sky.glsl
+```
+
+Current cave sky behavior explicitly mixes toward zero.
+
+### Implementation
+
+Scope the cave sky fix away from Aria:
+
+```glsl
+#if !defined PROGRAM_DEFERRED0 && !defined WORLD_ARIA
+
+float underground_sky_fade =
+    biome_cave * smoothstep(-0.1, 0.1, 0.4 - ray_dir.y);
+
+sky = mix(sky, vec3(0.0), underground_sky_fade);
+
+#endif
+```
+
+Or equivalent structure preserving upstream behavior exactly.
+
+### Important non-goal
+
+Do **not** globally force:
+
+```glsl
+biome_cave = 0
+```
+
+yet.
+
+There are multiple consumers of `biome_cave`, and some may still be aesthetically useful inside genuine enclosed Aria terrain.
+
+This phase disables only the clearly invalid:
+
+```text
+"lower sky should become pure black because this looks cave-like"
+```
+
+behavior.
+
+### Acceptance criteria
+
+When looking outward/downward from beneath an island:
+
+```text
+sky remains atmospheric
+no hard black lower hemisphere
+no horizon discontinuity
+```
+
+Inside a real hole/cave:
+
+```text
+local terrain remains dark because Minecraft skylight/shadow/AO are still low
+```
+
+Overworld's cave behavior must remain untouched.
+
+### Commit
+
+```text
+Disable cave sky blackening in Lampas Aria
+```
+
+Push and **STOP**.
+
+---
+
+# Phase P9.3 — Audit every remaining `biome_cave` consumer
+
+Now that the two major mechanisms are fixed, inspect everything else systematically.
+
+### Search
+
+Audit every reference to:
+
+```text
+biome_cave
+eye_skylight
+eyeBrightness
+cave_fog
+CAVE_LIGHTING_I
+```
+
+Known relevant consumers already include:
+
+```text
+include/fog/simple_fog.glsl
+program/d4_deferred_shading.fsh
+program/c14_color_grading.fsh
+include/lighting/diffuse_lighting.glsl
+include/fog/overworld/raymarched.glsl
+```
+
+For example, cave fog density is multiplied directly by `biome_cave`.
+
+Border atmospheric color also gets suppressed with:
+
+```glsl
+(1.0 - biome_cave)
+```
+
+
+
+And color grading increases vignette strength using `biome_cave`.
+
+### Classification
+
+Classify each consumer:
+
+```text
+A — definitely wrong for open Aria atmosphere
+B — useful for actual enclosed caves
+C — harmless visual grading
+D — requires runtime test
+```
+
+Document the table in `PROGRESS.md`.
+
+Example expected classification:
+
+| Consumer | Likely policy |
+|---|---|
+| sky → black | disable in Aria |
+| atmospheric border fog → zero | likely disable in Aria |
+| cave fog | probably suppress or redesign |
+| cave lighting | probably retain |
+| vignette | probably retain unless visually annoying |
+| Purkinje/night vision | retain unless reproduction proves wrong |
+
+### Implementation rule
+
+Do **not** make a blanket search-and-replace.
+
+Only add `WORLD_ARIA` branches where a consumer interprets:
+
+```text
+"roof above player"
 ```
 
 as:
 
-```glsl
-const float clouds_cumulus_radius =
-    planet_radius + CLOUDS_CUMULUS_ALTITUDE;
-
-const float clouds_cumulus_thickness =
-    CLOUDS_CUMULUS_ALTITUDE * CLOUDS_CUMULUS_THICKNESS;
-```
-
-
-
-That's the right place to specialize the geometry.
-
-### Goal
-
-Give Aria a canonical cloud geometry definition without changing Photon's normal Overworld values.
-
-### Implementation
-
-Introduce compile-time Aria constants, preferably adjacent to the cloud geometry or in one small new include such as:
-
 ```text
-shaders/include/sky/clouds/aria.glsl
+"entire world is underground"
 ```
 
-Conceptually:
+### Acceptance criteria
 
-```glsl
-#ifdef WORLD_ARIA
-
-const float aria_cloud_base_y = 64.0;
-const float aria_cloud_thickness = 4.0;
-
-const float clouds_cumulus_radius =
-    planet_radius
-    + CLOUDS_SCALE * (aria_cloud_base_y - SEA_LEVEL);
-
-const float clouds_cumulus_thickness =
-    CLOUDS_SCALE * aria_cloud_thickness;
-
-#else
-
-const float clouds_cumulus_radius =
-    planet_radius + CLOUDS_CUMULUS_ALTITUDE;
-
-const float clouds_cumulus_thickness =
-    CLOUDS_CUMULUS_ALTITUDE * CLOUDS_CUMULUS_THICKNESS;
-
-#endif
-```
-
-The existing:
-
-```glsl
-clouds_cumulus_top_radius
-```
-
-should remain derived from those values.
-
-### Why hardcode 64 here?
-
-The previous plan suggested using Iris's `cloudHeight` uniform. With the actual Photon source available, that is no longer the best first implementation.
-
-Photon's cloud radii are intentionally declared as compile-time `const float`s.  Turning them into runtime-uniform-dependent values would spread a much larger refactor through the cloud system.
-
-This repo exists specifically for `lampas:aria`, whose cloud contract is Y=64. Therefore:
-
-```text
-compile-time WORLD_ARIA constant = safer
-runtime cloudHeight refactor     = unnecessary for v1
-```
-
-We can revisit dynamic `cloudHeight` only if Aria's cloud height ever becomes configurable.
-
-### Assertions
-
-With:
-
-```text
-SEA_LEVEL     = 63
-CLOUDS_SCALE  = 10
-ARIA_BASE     = 64
-ARIA_THICKNESS= 4
-```
-
-assert:
-
-```text
-radius offset = 10
-world base    = 64
-
-thickness     = 40
-world top     = 68
-```
-
-### Critical non-goals
-
-Do **not**:
-
-```text
-change SEA_LEVEL globally
-change CLOUDS_SCALE
-change CLOUDS_CUMULUS_ALTITUDE globally
-modify world0 behavior
-move Aria worldgen
-```
+- no remaining black atmospheric band;
+- no black border fog;
+- no sudden cave fog underneath an open island;
+- legitimate enclosed spaces can still look darker;
+- Overworld unchanged.
 
 ### Commit
 
 ```text
-Add Aria-specific Photon cloud geometry
+Harden Photon cave effects for Aria atmosphere
 ```
 
 Push and **STOP**.
 
 ---
 
-### P5 — Close primary cumulus renderer validation
+# Phase P9.4 — Audit raymarched fog / volumetric lighting
 
-**Goal:** Prove the visible primary renderer is correct and requires no code changes.
+Analytic fog is not the only skylight-sensitive path.
 
-Most of this is already demonstrated:
-
-- old Y183–303 cumulus intersection is gone;
-- Y150–375 island space is clear of the primary layer;
-- Temporal Upscaling `Off/1` removes the checkerboard artifact;
-- therefore `d1_clouds.fsh` itself is not the source of that artifact.
-
-Do one final boundary test with Temporal Upscaling **Off**:
-
-```text
-Y60 → cloud deck above
-Y66 → inside Y64–68 cloud volume
-Y80 → cloud deck below
-```
-
-No shader modifications unless those three fail.
-
-Record the previous Y151/Y180/Y237/Y350/Y583 tests and the temporal-off comparison in `PROGRESS.md`.
-
-**Commit:**
-
-```text
-Validate Aria primary cumulus renderer
-```
-
-Push and **STOP**.
-
----
-
-# P6 — Fix Aria temporal cloud reconstruction
-
-This phase needs a slight redesign from the old plan.
-
-The old plan focused on this stale-looking declaration in `d2_clouds_upscaling.fsh`:
+Photon's raymarched fog currently does:
 
 ```glsl
-const float clouds_cumulus_radius =
-    planet_radius + CLOUDS_CUMULUS_ALTITUDE;
-```
-
-But the function's actual wind-layer selection does not use it; it selects using the altocumulus and cirrus radii. So replacing that variable with the Aria radius alone would accomplish essentially nothing.
-
-### Actual goal
-
-Fix the **4×4 temporal/checkerboard history rejection** when cloud occupancy changes across a pixel or layer boundary.
-
-The current reconstruction can replace 15/16 pixels with reprojected history:
-
-```glsl
-if (offset_0 != offset_1 && !disocclusion) {
-    current = history;
-    apparent_distance =
-        min(apparent_distance, apparent_distance_history);
-    ambient_scattering = history_data.z;
+if (!sky) {
+    light_sky[0] *= max(skylight, eye_skylight);
+    light_sky[1] *= max(skylight, eye_skylight);
 }
 ```
 
-Yet history is currently invalidated mainly for screen/terrain disocclusion, hand rendering, NaNs, and world-age changes—not because the current cloud sample and historical cloud sample fundamentally disagree.
 
-### P6 investigation
 
-Do **not** rely on exact apparent-distance sentinel equality. Photon isn't completely uniform:
+### Goal
+
+Determine whether volumetric fog beneath islands still becomes implausibly black after P9.1–P9.3.
+
+### Do not preemptively change it
+
+This path operates on **scene fog**, not simply the infinite atmosphere, so some occlusion response is correct.
+
+The question is whether it overuses camera-local skylight for an enormous volume.
+
+### Test
+
+Enable the relevant Photon volumetrics:
 
 ```text
-clouds_not_hit.apparent_distance = 1e5
-some zero-density raymarch results = 1e6
+VL on
+LPV/VL variants where applicable
 ```
 
-
-
-The better signals are probably:
+Test:
 
 ```text
-current.a                  cloud transmittance
-history.a                  historical transmittance
-apparent_distance
-apparent_distance_history
-pixel_age
-disocclusion
+outside island
+edge shadow
+center shadow
+between two islands
+genuine enclosed cave
 ```
 
-Prototype an Aria-only rejection rule around **cloud-presence disagreement and/or major apparent-distance discontinuity**.
+Look specifically for:
+
+```text
+a vertical curtain of darkness
+fog turning black immediately after passing under terrain
+light shafts disappearing globally
+large region taking camera-local lighting state
+```
+
+### Possible fix if reproduced
+
+Use an Aria-specific lower bound rather than unconditional `1.0`.
+
+For example, conceptually:
+
+```glsl
+#ifdef WORLD_ARIA
+float effective_skylight =
+    max(max(skylight, eye_skylight), aria_atmosphere_floor);
+#else
+float effective_skylight =
+    max(skylight, eye_skylight);
+#endif
+```
+
+But **derive/tune the floor visually**. Don't blindly choose a magic constant.
+
+The distinction should remain:
+
+```text
+ambient atmosphere = visible
+deep cave = dark
+```
+
+### Acceptance criteria
+
+Volumetric lighting/fog does not recreate the giant black void with VL enabled.
+
+### Commit
+
+Only if code changes:
+
+```text
+Tune Aria volumetric atmosphere beneath islands
+```
+
+Otherwise use a validation-only progress commit.
+
+Push and **STOP**.
+
+---
+
+# Phase P9.5 — Preserve intentional underside shadows
+
+This is important because we absolutely do **not** want to turn Aria into fullbright.
+
+### Goal
+
+Verify terrain itself still responds correctly to:
+
+```text
+sun shadow
+skylight
+AO
+SSAO/GTAO
+bounced lighting
+block light
+emission
+night vision
+```
+
+Photon's diffuse lighting already has separate ambient/cave illumination mechanisms, including `CAVE_LIGHTING_I`.
+
+### Test three surfaces
+
+Use the same material if possible:
+
+```text
+1. island top in direct sun
+2. vertical island side
+3. island underside
+```
+
+Desired ordering:
+
+```text
+top > side > underside
+```
+
+But:
+
+```text
+underside != featureless #000000
+```
+
+when surrounded by bright daytime atmosphere.
+
+### Do not solve with
+
+```text
+dimension ambient_light
+global gamma
+huge CAVE_LIGHTING_I
+removing shadows
+forcing light_levels.y
+forcing eyeBrightness
+```
+
+Those would destroy the visual hierarchy instead of fixing the atmosphere.
+
+### Optional adjustment
+
+Only if the actual underside geometry remains too crushed after the atmosphere is fixed, introduce a **small Aria-specific ambient/bounced-light floor** in the diffuse lighting stage.
+
+That would be a separate carefully bounded change.
 
 Conceptually:
 
 ```glsl
 #ifdef WORLD_ARIA
-
-bool current_has_cloud = /* transmittance/visibility test */;
-bool history_has_cloud = /* corresponding history test */;
-
-bool cloud_history_invalid =
-    current_has_cloud != history_has_cloud;
-
-cloud_history_invalid |=
-    /* meaningful distance discontinuity if both contain cloud */;
-
-disocclusion |= cloud_history_invalid;
-
+    lighting += small_aria_ambient * ao * directional_lighting;
 #endif
 ```
 
-Don't pick arbitrary thresholds and ship them immediately. Test them.
+But only after proving it is needed.
 
-Also remove the unused local `clouds_cumulus_radius` while here if static analysis confirms it is truly dead, but treat that as cleanup—not the fix.
+### Acceptance criteria
 
-### P6 test matrix
-
-Test Temporal Upscaling:
+At noon:
 
 ```text
-Off / 1
-4× / 2
-9× / 3
-16× / 4
+island top      bright
+island side     moderate
+island underside dark but readable
+background sky atmospheric and bright
 ```
 
-At least test:
+At night:
 
 ```text
-clear
-rain
-thunder
-
-stationary
-fast horizontal flight
-fast vertical flight
-rapid camera spin
-Elytra boost looking backward
+everything appropriately darker
+no artificial fullbright underside
 ```
 
-And specifically revisit approximately:
+### Commit if necessary
 
 ```text
-Y64–68
-Y383–431
-Y663–753
-Y726 screenshot scene
-```
-
-The Y726 range matters because that is actually around Photon's current cirrus altitude, so the temporal bug may be a generic layer-boundary problem rather than something uniquely caused by the tiny Y64–68 cumulus shell.
-
-**Acceptance:**
-
-```text
-16× temporal upscaling clean
-no bright checkerboard squares
-no persistent ghost clouds
-no excessive shimmer caused by over-invalidating history
-no large FPS/GPU regression
-Overworld behavior unchanged
-```
-
-**Commit:**
-
-```text
-Fix Aria cloud temporal history reconstruction
+Tune Aria floating-island underside lighting
 ```
 
 Push and **STOP**.
 
 ---
 
-# P7 — Audit and harden every remaining cloud layer
+# Phase P9.6 — Exposure and color-grading regression
 
-This is the old P8, moved ahead of shadows.
+Fixing the sky can expose another problem: Photon's exposure adapts based on the screen.
 
-We now have live evidence that this phase is necessary.
-
-### Current Photon geometry
-
-The current relevant geometry is roughly:
-
-| Layer | Current effective world range | Problem |
-|---|---:|---|
-| Primary cumulus | **Y64–68 in Aria** | Fixed |
-| Cumulus congestus | approx **Y103–1383** | Huge volume; must audit |
-| Altocumulus / altostratus | approx **Y383–431** | Only ~8 blocks above high-island envelope |
-| Cirrus | approx **Y663–753** | Safely above islands, but directly relevant around Y726 |
-| Noctilucent | ~Y8063 | Irrelevant to island intersection |
-
-The alarming one is **cumulus congestus**. Stock Photon defines:
+Under an island you can easily have:
 
 ```text
-CLOUDS_CUMULUS_CONGESTUS_ALTITUDE = 400
-CLOUDS_CUMULUS_CONGESTUS_THICKNESS = 32
+90% dark terrain
+10% very bright sky
 ```
 
-and constructs its own independent spherical shell.
+which is a nasty auto-exposure case.
 
-That translates to approximately:
+### Test
+
+With auto exposure enabled:
 
 ```text
-base = 63 + 400 / 10
-     = Y103
-
-thickness = (400 × 32) / 10
-          = 1280 blocks
-
-top = Y1383
+walk from sunlight → island shadow
+look toward bright horizon
+look straight into underside
+turn 180°
+leave the shadow
 ```
 
-It is distance-limited and weather/blend-dependent, so that does **not** mean the entire world is constantly buried in it—but its geometry absolutely crosses the entire Aria island band.
-
-Altocumulus remains at `3200` shader units with `0.15` thickness, i.e. roughly Y383–431.
-
-Cirrus is currently based around `6000`, putting it near Y663; with the existing thickness formula its band extends roughly to Y753.
-
-### Weather explains your thunder screenshot
-
-Photon explicitly turns layer 1 toward **altostratus** under high wind/humidity, and cirrus amount also increases with `rainStrength`.
-
-That's why `/weather thunder` is such a useful torture test.
-
-### P7 policy
-
-Classify every cloud path:
-
-```text
-A — dense volume that must stay out of Y150–375
-B — thin/high decorative cloud that may remain
-C — primary-cloud variant that should inherit Aria geometry
-D — inactive/optional path that still needs a safe Aria behavior
-```
-
-Audit:
-
-```text
-primary cumulus
-cumulus congestus
-altocumulus
-altostratus weather state
-cirrus
-cirrocumulus
-noctilucent
-BLOCKY_CLOUDS
-weather-generated cloud parameters
-```
-
-### Likely decisions
-
-**Altocumulus/altostratus:** probably needs adjustment. Y383 is simply too close to high islands ending around Y375, especially when thunder turns it into a dense sheet. Either lift it clearly above the dimension's island/build space or reduce the dense altostratus component specifically for `WORLD_ARIA`.
-
-**Congestus:** definitely deserves special treatment. Don't blindly attach its current 1280-block vertical tower to the new Y64 deck. Good options are to suppress congestus in Aria, redesign it as distant horizon weather, or give it an Aria-specific shell that cannot consume the island stratum.
-
-**Cirrus:** probably leave it high. It provides useful high-cloud structure and is well above the islands. Only change it if the Y663–753 live tests reveal an actual problem.
-
-**Noctilucent:** almost certainly leave alone.
-
-**Blocky clouds:** when enabled, make sure their Aria path honors the intended deck rather than resurrecting an unrelated Overworld altitude.
-
-Test clear/rain/thunder at:
-
-```text
-Y100
-Y150
-Y220
-Y330
-Y375
-Y400
-Y494
-Y583
-Y663
-Y726
-Y760
-```
-
-**Acceptance:** no dense weather layer materially obscures the Y150–375 islands.
-
-**Commit:**
-
-```text
-Harden Photon cloud layers for Aria
-```
-
-Push and **STOP**.
-
----
-
-# P8 — Validate cloud shadows against final cloud geometry
-
-This is the old P7, intentionally moved after P7.
-
-That ordering matters because `cloud_shadows.glsl` renders cumulus, congestus, altocumulus and cirrus. Validating shadows and *then* moving those layers would make the shadow validation stale.
-
-The good news is that the shadow code already consumes the shared cloud constants, including the Aria-aware primary cumulus radii.
-
-### Validate
-
-Terrain around:
-
-```text
-Y50
-Y64
-Y80
-Y150
-Y220
-Y330
-Y375
-Y400
-```
-
-Under:
-
-```text
-clear
-rain
-thunder
-morning
-noon
-sunset
-```
+Slow and rapid camera movements.
 
 Look for:
 
 ```text
-phantom shadows at old Y183–303
-dark horizontal bands
-upper-cloud shadows projected from wrong altitude
-islands treated as if inside cloud volume
-mismatch between visible cloud and its ground shadow
+black crush
+white sky blowout
+exposure pumping
+1–2 second adaptation lag
+vignette becoming excessive
 ```
 
-Only change `cloud_shadows.glsl` if the final shared geometry isn't sufficient.
+### Policy
 
-Do **not** change:
+Do not globally alter Photon's exposure.
 
-```glsl
-eyeAltitude - SEA_LEVEL
-```
+Only add Aria tuning if the previous lighting fixes reveal a reproducible Aria-specific adaptation problem.
 
-merely because Aria worldgen uses `sea_level = -64`.
+### Acceptance criteria
 
-If no shader change is needed, record a validation-only commit.
-
-**Commit if code changes:**
+Smooth transitions without:
 
 ```text
-Align Aria cloud shadows with final cloud geometry
+instant blackout
+flashbang horizon
+persistent exposure mismatch
+```
+
+### Commit if changed
+
+```text
+Tune Photon exposure for Aria island shadows
 ```
 
 Push and **STOP**.
 
 ---
 
-# P9 — Atmosphere, horizon and fog audit
+# Phase P9.7 — Distant Horizons / Voxy atmospheric consistency
 
-By this point cloud geometry should be finished.
+Your screenshot includes a huge distant scene, so this matters.
 
-This phase now has some actual evidence already: several of your lower-altitude screenshots show a very dark/black lower hemisphere underneath the floating islands. That may or may not be desirable, but it belongs here—not in the cloud phases.
+### Goal
 
-Test:
+Make sure:
 
 ```text
-Y-40
-Y0
-Y64
-Y100
-Y150
-Y220
-Y330
-Y400
+vanilla/Iris terrain
+Voxy terrain
+Distant Horizons terrain
+actual sky
+fogged horizon
 ```
 
-At:
+all agree about the illumination underneath islands.
+
+### Test
+
+From under a large island:
+
+```text
+near terrain
+mid-distance terrain
+LOD transition band
+far island silhouettes
+sky behind islands
+```
+
+Check with whichever of Voxy/DH are present in the Lampas client.
+
+### Look for
+
+```text
+near atmosphere blue, far atmosphere black
+LOD terrain black while vanilla terrain readable
+hard lighting seam at LOD boundary
+different fog response for DH/Voxy
+```
+
+Do not patch DH/Voxy paths unless a discrepancy is actually reproduced.
+
+### Acceptance criteria
+
+No distance-dependent return of the giant black void.
+
+### Commit if needed
+
+```text
+Align Aria LOD atmosphere under floating islands
+```
+
+Push and **STOP**.
+
+---
+
+# Phase P9.8 — Full visual matrix
+
+Once all implementation phases are done, run the proper torture test.
+
+### Altitudes
+
+Use approximately:
+
+```text
+Y -40
+Y 0
+Y 60
+Y 66
+Y 80
+Y 100
+Y 150
+Y 220
+Y 330
+Y 375
+Y 400
+```
+
+The dimension contract places the cloud deck at Y64–68 and the production island strata much higher.
+
+### Positions
+
+At each useful island altitude:
+
+```text
+open atmosphere
+island edge
+under small island
+under huge island
+between overlapping islands
+inside real cavity
+```
+
+### Time
 
 ```text
 sunrise
 noon
 sunset
 midnight
+```
+
+### Weather
+
+```text
+clear
 rain
 thunder
 ```
 
-Inspect:
+### Shader profiles
+
+At least:
 
 ```text
-black void beneath islands
-horizon seam
-sky-ground treatment
-fog below islands
-exposure changes crossing the cloud deck
-sun/moon
-stars
-rain/thunder atmosphere
-distant Voxy terrain blending
+medium
+high
+ultra
 ```
 
-Keep `WORLD_OVERWORLD` inheritance. Add `WORLD_ARIA` atmosphere branches **only for defects you can reproduce**.
-
-**Commit if needed:**
+And check major toggles that affect this problem:
 
 ```text
-Tune Photon atmosphere for Lampas Aria
+SH_SKYLIGHT
+GTAO
+VL
+BLOOMY_FOG
+AUTO_EXPOSURE
+CAVE_FOG
+SHADOW
+CLOUD_SHADOWS
 ```
 
-Push and **STOP**.
-
----
-
-# P10 — Dimension-transition hardening
-
-Now hammer the actual Lampas transition behavior.
-
-At least ten cycles:
+### Required visual invariants
 
 ```text
-Overworld → Aria
-Aria → Overworld
+✓ daytime horizon does not become pure black under an island
+✓ distant sky remains visible beneath floating terrain
+✓ island underside remains convincingly shadowed
+✓ actual enclosed caves remain dark
+✓ no horizon seam
+✓ no fog wall
+✓ no exposure flash
+✓ no profile-specific regression
+✓ no Overworld behavior change
 ```
 
-Also:
+### Commit
 
 ```text
-commands
-actual ascent seam
-actual descent seam
-Elytra crossing at speed
-crossing while raining
-crossing while thunder
-crossing then immediately spinning camera
-```
-
-Verify:
-
-```text
-correct world0 ↔ aria program switch
-no old cloud history
-no old weather layer history
-no stale shadow map
-no exposure flash
-no black frame
-no old Y183–303 clouds for one frame
-no Voxy/Iris pipeline corruption
-```
-
-Any history-clearing fix discovered here should be narrowly tied to dimension/pipeline transitions.
-
-**Commit:**
-
-```text
-Harden Photon state across Aria transitions
+Validate Aria atmosphere beneath floating islands
 ```
 
 Push and **STOP**.
 
 ---
 
-# P11 — Consolidated automated regression validator
+# Phase P9.9 — Automated regression protection
 
-Turn the ad-hoc phase validators into one repository-native suite.
+The shader validator cannot judge screenshots, but it can prevent architectural regressions.
 
-For example:
+### Extend repository validation
+
+Add assertions such as:
 
 ```text
-tools/validate.py
+WORLD_ARIA still exists in all Aria wrappers
+
+Overworld wrappers do NOT gain WORLD_ARIA
+
+the cave-sky blackening code has an Aria exclusion
+
+the analytic atmosphere contains its intentional Aria branch
+
+stock Overworld expressions remain available in the non-Aria path
+
+no global changes to:
+    SEA_LEVEL
+    SKYLIGHT_I
+    CAVE_LIGHTING_I
+    ambient values
 ```
 
-It should cover:
+If P9.3 introduces a helper such as:
 
-```text
-dimension.properties routing
-
-world0 ↔ aria wrapper inventory parity
-WORLD_ARIA macro placement
-program include existence
-program.world0 ↔ program.aria toggle parity
-
-Aria primary cloud math:
-  base 64
-  top 68
-
-stock Photon math:
-  base 183
-  top 303
-
-final P7 layer contracts
-
-no accidental WORLD_ARIA in vanilla wrappers
-
-known non-Aria formulas remain unchanged
-
-P6 temporal invariants / forbidden stale patterns
+```glsl
+aria_atmosphere_skylight(...)
 ```
 
-Keep `validate_wrappers.py` if useful, or have the new top-level validator invoke it.
+test its presence and isolation.
 
-Optional GitHub Actions:
+### Acceptance criteria
 
 ```text
-python tools/validate.py
+python tools/validate_wrappers.py
 ```
 
-on pushes/PRs.
+and the eventual consolidated validator pass.
 
-**Commit:**
+`git diff --check` clean.
+
+### Commit
 
 ```text
-Add Aria shader regression validator
+Add Aria atmosphere regression validation
 ```
 
 Push and **STOP**.
 
 ---
 
-# P12 — Cross-dimension visual and performance regression
+# Phase P9.10 — Documentation
 
-Compare the derivative against pristine Photon v1.3b.
-
-Dimensions:
+Update:
 
 ```text
-Overworld
-Nether
-End
-Aria
+README.md
+PLAN.md
+PROGRESS.md
 ```
 
-Overworld/Nether/End should remain visually equivalent except for unavoidable implementation-neutral differences.
+And possibly Aria's existing Photon compatibility documentation if it is intended to remain the cross-repo technical spec.
 
-For Aria compare:
+Explain the design distinction:
 
 ```text
-Temporal Upscaling 1 vs 4
-clear vs rain vs thunder
-low deck vs islands vs high atmosphere
-Voxy near/far terrain
+Minecraft skylight:
+    local block-space illumination
+
+Photon atmospheric illumination:
+    large-scale sky/air scattering
+
+Aria:
+    a floating island may occlude the former without extinguishing the latter
 ```
 
-Track:
+Document that this is deliberately **not** implemented via:
 
 ```text
-FPS
-GPU/frame time if available
-obvious cloud cost
-shader reload time
-memory/VRAM anomalies
+ambient_light > 0
+fullbright
+global cave-light increase
+disabled shadows
 ```
 
-P6 must not “fix” the checkerboard problem by accidentally destroying temporal reuse and making clouds 16× more expensive.
+### Commit
 
-If no code change is necessary, make this validation-only.
+```text
+Document Aria floating-island atmosphere behavior
+```
 
 Push and **STOP**.
 
 ---
 
-# P13 — Package and release
+## What I expect the actual code diff to converge to
 
-No runtime patcher.
-
-Ship this repository as the actual derivative shaderpack.
-
-Build something like:
+The minimal correct production fix will probably be surprisingly small:
 
 ```text
-Photon-v1.3b-Lampas-Aria.zip
+include/fog/overworld/analytic.glsl
+    → prevent local eye skylight from zeroing Aria's global atmosphere
+
+include/sky/sky.glsl
+    → don't use Photon's cave sky-to-black hack in WORLD_ARIA
 ```
 
-Zip structure:
+Then possibly:
 
 ```text
-shaders/
-LICENSE
-README.md    optional/useful
+include/fog/simple_fog.glsl
+program/d4_deferred_shading.fsh
+include/fog/overworld/raymarched.glsl
 ```
 
-Not:
+if live testing shows secondary cave assumptions still leaking through.
 
-```text
-Photon-v1.3b-Lampas-Aria/
-    shaders/
-```
-
-if that extra nesting prevents Iris recognizing the pack.
-
-Then install the **ZIP itself** into `.minecraft-lampas` and run a final smoke test. Don't rely only on the development junction.
-
-Record:
-
-```text
-Photon base: v1.3b
-Iris tested: 1.11.2+mc26.2
-Minecraft: 26.2
-Aria dimension: lampas:aria
-SHA-256 of release ZIP
-```
-
-Suggested tag:
-
-```text
-v1.3b-lampas-aria.1
-```
-
-Push/review before actually tagging if you want to preserve the current review discipline.
-
----
-
-# P14 — Documentation and upstream-maintenance contract
-
-Finish README/docs with:
-
-```text
-what this fork is
-why stock Photon breaks Aria
-Iris dimension routing
-WORLD_ARIA architecture
-primary cloud Y64–68 contract
-upper-cloud decisions
-weather behavior
-installation
-supported versions
-known limitations
-known stock Photon preprocessor diagnostic
-attribution/license
-release process
-```
-
-Document future Photon upgrades as:
-
-```text
-import/rebase new upstream Photon
-re-audit changed cloud implementation
-recreate/check aria wrappers
-run validator
-run temporal tests
-run clear/rain/thunder matrix
-run transition tests
-run cross-dimension regression
-```
-
-Do **not** promise that a future Photon version is compatible just because the wrapper tree still applies.
-
----
-
-## New dependency chain
-
-So from **right now**, I'd run:
-
-```text
-P5  finish primary-renderer validation
- ↓
-P6  fix temporal/checkerboard reconstruction
- ↓
-P7  finalize ALL cloud-layer geometry + weather behavior
- ↓
-P8  validate shadows against that final geometry
- ↓
-P9  atmosphere/fog/horizon
- ↓
-P10 dimension transitions
- ↓
-P11 automated regression suite
- ↓
-P12 visual/performance regression
- ↓
-P13 packaging/release
- ↓
-P14 docs/upstream maintenance
-```
-
-# Refs:
-- C:\Users\markj\source\repos\lampas-aria
+I would **not touch `lampas-aria`'s `ambient_light: 0.0`** during this effort. The shader is currently taking perfectly valid local darkness underneath an island and incorrectly promoting it to **“the whole surrounding atmosphere is underground.”** That's the semantic bug we want the agent to eliminate.
