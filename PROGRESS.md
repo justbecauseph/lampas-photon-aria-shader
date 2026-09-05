@@ -497,3 +497,44 @@
 - **Wrapper Validation**: Verified `python tools/validate_wrappers.py` passes cleanly.
 - **YAML Validation**: Verified `.github/workflows/release.yml` parses with zero errors.
 - **Git Hygiene**: `git diff --check` clean (0 whitespace or newline errors).
+
+---
+
+## Phase P11 — Documentation & README Refinement (Completed)
+
+### Scope
+
+- Fix markdown syntax errors, broken backslash escapes (`\lampas:aria\`, `\world0\`, etc.), and malformed LaTeX math blocks in `README.md`.
+- Document project background, architectural purpose, and the specific rendering problems solved:
+  - Volumetric cloud altitude collision ($Y \in [183, 303]$ vs $Y \in [150, 375]$).
+  - Under-island black atmospheric scattering collapse (`eye_skylight \approx 0.0`).
+  - Low-altitude cloud temporal reprojection / upscaling invalidation.
+- Document all implemented features and components:
+  - Iris dimension routing via `shaders/dimension.properties`.
+  - 118 program wrappers under `shaders/aria/` and `shaders.properties` toggle parity.
+  - Centralized cloud ocean geometry at $Y \in [64, 68]$.
+  - Decoupled atmospheric in-scattering in `shaders/include/fog/overworld/analytic.glsl`.
+  - Temporal reprojection transition tracking in `shaders/program/d2_clouds_upscaling.fsh`.
+  - Voxy LOD depth buffer compatibility in `voxy.json`.
+  - 100% upstream Overworld/Nether/End isolation.
+- Add practical player installation instructions (release archives) and developer instructions (directory junctions).
+- Document automated CI/CD releases and validation via `tools/validate_wrappers.py`.
+- Include upstream attribution to Photon by SixthSurge and LGPL-3.0 licensing.
+
+### Acceptance Criteria
+
+1. **Syntax & Formatting**: All backslash escapes and corrupted math expressions replaced with proper GitHub Flavored Markdown and mathematical notation.
+2. **Content Completeness**: Background, architectural features, installation, development/CI, and license clearly detailed.
+3. **Repository Integrity**: `tools/validate_wrappers.py` passes cleanly; `git diff --check` passes with zero errors.
+
+### Summary of Completed Work
+
+- Rewrote `README.md` to resolve corrupted backslash escaping and malformed math syntax.
+- Provided comprehensive documentation for the architectural fixes in Lampas Aria (cloud ocean geometry, atmospheric scattering preservation beneath islands, temporal upscaling stability, and Voxy compatibility).
+- Added step-by-step user installation and developer junction setup instructions.
+- Documented testing via `tools/validate_wrappers.py` and automated GitHub Actions release workflow.
+
+### Validation
+
+- `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
+- `git diff --check`: Clean (0 whitespace or newline errors).
