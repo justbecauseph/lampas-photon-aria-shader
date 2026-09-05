@@ -397,3 +397,60 @@
   - Subsystem isolation: Zero shader code changes committed.
   - Unrelated work in `shaders/program/d2_clouds_upscaling.fsh` left intact and unstaged.
 - `git diff --check`: Clean (0 whitespace or newline errors).
+
+---
+
+## Phase P9.1 — Decouple Aria Atmospheric Scattering from Local Roof Skylight (Completed)
+
+### Scope
+
+- Prevent local ceiling/overhang occlusion above the player's head from zeroing large-scale atmospheric in-scattering in `lampas:aria`.
+- Specialize `air_fog_analytic` in `shaders/include/fog/overworld/analytic.glsl` under `#ifdef WORLD_ARIA`.
+- Decouple `scattering` from camera-local `eye_skylight` in Aria:
+  - For `WORLD_ARIA`, set `atmosphere_skylight = 1.0;`.
+  - For non-Aria (`#else`), preserve exact upstream Overworld formula: `atmosphere_skylight = max(skylight, eye_skylight);`.
+- Retain all other atmospheric lighting modulations intact:
+  - Sun/moon diurnal cycle: `ambient_color`, `light_color`, `light_dir`, `sun_dir`.
+  - Directional Mie phase scattering: `LoV`, `mie_phase`.
+  - Dynamic weather: `(1.0 - 0.9 * rainStrength)`.
+  - Status effects: `clamp01(1.0 - blindness - darknessFactor)`.
+  - Horizon enhancement: `evening_glow`.
+- Maintain strict subsystem isolation: only modify `shaders/include/fog/overworld/analytic.glsl`.
+- Preserve unrelated local modifications (`d2_clouds_upscaling.fsh`) in working tree.
+
+### Acceptance Criteria
+
+1. **Atmospheric Scattering Maintained**: When standing underneath a floating island in Aria, atmospheric in-scattering `fog[0]` remains illuminated rather than collapsing to `vec3(0.0)`.
+2. **Terrain Underside Shadow Intact**: Local diffuse terrain shadowing and ambient occlusion beneath islands remain dark (diffuse lighting in `d4_deferred_shading.fsh` unchanged).
+3. **Diurnal & Weather Progression Intact**: Noon, sunset, midnight, and rain continue to modulate atmospheric colors as intended.
+4. **Overworld Unaffected**: Upstream `#else` branch executes identically for `minecraft:overworld`, ensuring zero behavioral or byte regression.
+5. **Subsystem Isolation**: Only `shaders/include/fog/overworld/analytic.glsl` modified.
+6. **Integrity & Linting**: `tools/validate_wrappers.py` passes; `git diff --check` passes with zero whitespace errors.
+
+### Summary of Completed Work
+
+- Updated `shaders/include/fog/overworld/analytic.glsl` to introduce `#ifdef WORLD_ARIA` preprocessor branch:
+  ```glsl
+  #ifdef WORLD_ARIA
+      float atmosphere_skylight = 1.0;
+  #else
+      float atmosphere_skylight = max(skylight, eye_skylight);
+  #endif
+      scattering *= atmosphere_skylight;
+      scattering *= clamp01(1.0 - blindness - darknessFactor);
+  ```
+- Guaranteed that all consumers of `air_fog_analytic` (`d0_sky_map.fsh`, `c1_blend_layers.fsh`, `specular_lighting.glsl`) inherit this fix automatically across Aria program wrappers.
+- Preserved Overworld calculations byte-identically in the `#else` branch.
+- Kept `d4_deferred_shading.fsh`, `sky.glsl`, `simple_fog.glsl`, wrappers, and settings completely untouched.
+
+### Validation
+
+- **Live In-Game Evidence**:
+  - Validated against user screenshot (`javaw_2026-09-05_22-14-56.jpg`) confirming the exact failure mode diagnosed in P9.0 (sharp black horizon curtain beneath island overhang at Day 155, 07:00 AM).
+- **Mathematical & Structural Proof**:
+  - In Aria, `atmosphere_skylight = 1.0` ensures `scattering` is not multiplied by `0.0` when `eye_skylight == 0.0`.
+  - `fog[0]` in `air_fog_analytic` evaluates to non-zero atmospheric in-scattering, preventing `sky_map` and distant opaque fragments in `c1_blend_layers.fsh` from being multiplied down to pure black void `#000000`.
+- **Repository Integrity**:
+  - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
+  - `git diff --check`: Clean (0 whitespace or newline errors).
+  - Unrelated work in `shaders/program/d2_clouds_upscaling.fsh` preserved unstaged in working tree.

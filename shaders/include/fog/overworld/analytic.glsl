@@ -97,7 +97,12 @@ mat2x3 air_fog_analytic(
     }
     //*/
 
-    scattering *= max(skylight, eye_skylight);
+#ifdef WORLD_ARIA
+    float atmosphere_skylight = 1.0;
+#else
+    float atmosphere_skylight = max(skylight, eye_skylight);
+#endif
+    scattering *= atmosphere_skylight;
     scattering *= clamp01(1.0 - blindness - darknessFactor);
 
     // Artifically brighten fog in the early morning and evening (looks nice)
