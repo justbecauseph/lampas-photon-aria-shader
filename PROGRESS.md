@@ -191,3 +191,67 @@
   3. **Option Parity Validated**: Pack options (`lampas-photon-aria.txt`) written and applied cleanly (`TAAU=true`, `BLOOMY_FOG=true`, `CUSTOM_SKY=true`, `POM=true`, `SNELLS_WINDOW=true`, `VL=false`). Mirrored toggles in `shaders.properties` operated without regression.
   4. **Geometry Baseline Verified**: Volumetric cumulus clouds remain at upstream Overworld altitude ($Y \in [183, 303]$), confirming cloud geometry has not been touched ahead of Phase P4.
   5. **Clean Isolation**: `shaders/world0/`, `shaders/program/`, and `shaders/include/` remain 100% pristine.
+
+---
+
+## Phase P4 — Centralize Aria Cloud Geometry (Completed)
+
+### Scope
+
+- Specialize the canonical cumulus cloud geometry in `shaders/include/sky/clouds/constants.glsl` using `#ifdef WORLD_ARIA`.
+- For `WORLD_ARIA`, set:
+  - `aria_cloud_base_y = 64.0`
+  - `aria_cloud_thickness = 4.0`
+  - `clouds_cumulus_radius = planet_radius + CLOUDS_SCALE * (aria_cloud_base_y - SEA_LEVEL)`
+  - `clouds_cumulus_thickness = CLOUDS_SCALE * aria_cloud_thickness`
+- For non-Aria (`#else`), retain exact upstream Overworld formulas:
+  - `clouds_cumulus_radius = planet_radius + CLOUDS_CUMULUS_ALTITUDE`
+  - `clouds_cumulus_thickness = CLOUDS_CUMULUS_ALTITUDE * CLOUDS_CUMULUS_THICKNESS`
+- Common top radius calculation:
+  - `clouds_cumulus_top_radius = clouds_cumulus_radius + clouds_cumulus_thickness`
+- Strictly isolate this change to `shaders/include/sky/clouds/constants.glsl`:
+  - Do NOT touch `shaders/settings.glsl`.
+  - Do NOT touch `shaders/program/d1_clouds.fsh`.
+  - Do NOT touch `shaders/program/d2_clouds_upscaling.fsh` (temporal reprojection geometry left for P6).
+  - Do NOT touch `shaders/include/lighting/cloud_shadows.glsl` (shadow geometry left for P5).
+  - Do NOT touch `shaders/world0/` or `shaders/aria/` wrappers.
+  - Leave `SEA_LEVEL`, `CLOUDS_SCALE`, `CLOUDS_CUMULUS_ALTITUDE`, and `CLOUDS_CUMULUS_THICKNESS` untouched.
+
+### Acceptance Criteria
+
+1. **Aria Cloud Boundary Contract**:
+   - Radius offset: `10.0 * (64.0 - 63.0) = 10.0`
+   - Shell thickness: `10.0 * 4.0 = 40.0`
+   - Effective world base: `63.0 + 10.0 / 10.0 = 64.0`
+   - Effective world top: `63.0 + (10.0 + 40.0) / 10.0 = 68.0`
+2. **Overworld Unaffected**: Non-Aria builds evaluate the `#else` branch, keeping base $Y=183.0$ and top $Y=303.0$.
+3. **Upstream Constants Intact**: `SEA_LEVEL` (63.0), `CLOUDS_SCALE` (10.0), `CLOUDS_CUMULUS_ALTITUDE` (1200.0), and `CLOUDS_CUMULUS_THICKNESS` (1.0) remain unmodified.
+4. **Subsystem Isolation**: Only `shaders/include/sky/clouds/constants.glsl` modified; zero changes to wrappers, `d1_clouds.fsh`, `d2_clouds_upscaling.fsh`, `cloud_shadows.glsl`, or `settings.glsl`.
+5. **Static & Structural Validation**: Static assertions pass; `tools/validate_wrappers.py` passes.
+
+### Summary of Completed Work
+
+- Updated `shaders/include/sky/clouds/constants.glsl` to introduce `#ifdef WORLD_ARIA` branch defining:
+  - `aria_cloud_base_y = 64.0;`
+  - `aria_cloud_thickness = 4.0;`
+  - `clouds_cumulus_radius = planet_radius + CLOUDS_SCALE * (aria_cloud_base_y - SEA_LEVEL);`
+  - `clouds_cumulus_thickness = CLOUDS_SCALE * aria_cloud_thickness;`
+- Maintained `#else` branch with original `planet_radius + CLOUDS_CUMULUS_ALTITUDE` and `CLOUDS_CUMULUS_ALTITUDE * CLOUDS_CUMULUS_THICKNESS`.
+- Preserved `clouds_cumulus_top_radius = clouds_cumulus_radius + clouds_cumulus_thickness;` unconditionally outside the preprocessor branch.
+- Kept `shaders/settings.glsl`, `shaders/program/d1_clouds.fsh`, `shaders/program/d2_clouds_upscaling.fsh`, `shaders/include/lighting/cloud_shadows.glsl`, `shaders/world0/`, and `shaders/aria/` completely untouched.
+
+### Validation
+
+- **Mathematical Proof & Assertions**:
+  - Aria radius offset: `CLOUDS_SCALE * (64.0 - 63.0) = 10.0 * 1.0 = 10.0`
+  - Aria thickness: `CLOUDS_SCALE * 4.0 = 40.0`
+  - Aria top radius offset: `10.0 + 40.0 = 50.0`
+  - Aria world-space base: `SEA_LEVEL + 10.0 / 10.0 = 64.0`
+  - Aria world-space top: `SEA_LEVEL + 50.0 / 10.0 = 68.0`
+  - Overworld world-space base: `63.0 + 1200.0 / 10.0 = 183.0`
+  - Overworld world-space top: `63.0 + 2400.0 / 10.0 = 303.0`
+- **Automated Validation**:
+  - Static assertion script (`validate_p4.py`): **ALL STATIC ASSERTIONS PASSED**
+  - Wrapper & property parity suite (`tools/validate_wrappers.py`): **PASSED** (118 wrappers, 23 mirrored toggles)
+  - Subsystem isolation: `git diff --name-only` confirmed only `shaders/include/sky/clouds/constants.glsl` and `PROGRESS.md` were modified.
+- `git diff --check`: clean (0 whitespace or newline errors).

@@ -3,9 +3,28 @@
 
 #include "/include/sky/atmosphere.glsl"
 
-const float clouds_cumulus_radius = planet_radius + CLOUDS_CUMULUS_ALTITUDE;
+#ifdef WORLD_ARIA
+
+const float aria_cloud_base_y = 64.0;
+const float aria_cloud_thickness = 4.0;
+
+const float clouds_cumulus_radius =
+    planet_radius +
+    CLOUDS_SCALE * (aria_cloud_base_y - SEA_LEVEL);
+
+const float clouds_cumulus_thickness =
+    CLOUDS_SCALE * aria_cloud_thickness;
+
+#else
+
+const float clouds_cumulus_radius =
+    planet_radius + CLOUDS_CUMULUS_ALTITUDE;
+
 const float clouds_cumulus_thickness =
     CLOUDS_CUMULUS_ALTITUDE * CLOUDS_CUMULUS_THICKNESS;
+
+#endif
+
 const float clouds_cumulus_top_radius =
     clouds_cumulus_radius + clouds_cumulus_thickness;
 
