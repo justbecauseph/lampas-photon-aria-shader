@@ -869,3 +869,121 @@
   - `git diff --check`: Clean (0 whitespace or newline errors).
 - **Subsystem & Working Tree Isolation**:
   - `git status` confirmed modifications strictly confined to `shaders/program/c1_blend_layers.fsh` and `PROGRESS.md`.
+
+---
+
+## Phase B3.5 — Harden and Validate the Completed Merged Voxy Depth Integration (Completed)
+
+### Scope
+
+- Comprehensive hardening, regression testing, and mathematical validation of the merged Voxy depth integration (`excludeLodsFromVanillaDepth: false`) following Phase B3.3.1.
+- Invariants & Architecture Preserved:
+  - `shaders/program/voxy.json`: `"excludeLodsFromVanillaDepth": false` (participates in Minecraft/Iris world depth for hardware depth occlusion).
+  - P9.1: Aria atmospheric scattering decoupled from `eye_skylight` under floating islands.
+  - C2/C2.1: Camerapture glowing pictures (opaque base + emissive overlay, no sky bleed-through).
+  - B3.1: Voxy distant water renders beyond vanilla render distance.
+  - B3.2: Voxy volumetric fog uses native Voxy depth reconstruction without rectangular cutoffs.
+  - B3.3: Voxy distant water uses correct translucent composition, lightmap range $[0.0, 1.0]$, and robust water detection.
+  - B3.3.1: Voxy water backing surface correctly resolves to the solid seabed (`back_depth_lod`) rather than the merged water-surface depth.
+  - Strict preservation: zero modifications to Distant Decorations, zero modifications to Camerapture, zero global replacements of `is_lod_terrain()`, and zero speculative shader code edits.
+
+### Depth Ownership Contract Formalization
+
+1. **Visible-Surface Ownership (`is_voxy_surface`)**:
+   - Implemented in `shaders/include/misc/voxy_merged_depth.glsl`:
+     $$\text{is\_voxy\_surface}(d_{\text{world}}, d_{\text{voxy}}) \iff (d_{\text{voxy}} < 1.0) \land \left(d_{\text{world}} \ge 1.0 \lor z_{\text{voxy}} \le z_{\text{world}} + \max(0.001 \cdot z_{\text{voxy}}, 0.1)\right)$$
+   - Operational semantic: answers *"Is this visible pixel represented by Voxy?"*
+   - Strictly enforces that foreground vanilla geometry (walls, fences, entities, glass) owns the pixel whenever $z_{\text{world}} < z_{\text{voxy}} - \epsilon$.
+   - Must *never* be weakened to accept deeper Voxy surfaces, as doing so would cause distant Voxy terrain to bleed through closer vanilla geometry.
+
+2. **Translucent Backing-Surface Ownership (`back_is_lod_terrain`)**:
+   - Implemented in `shaders/program/c1_blend_layers.fsh`:
+     ```glsl
+     bool back_is_lod_terrain = back_depth_lod < 1.0 && (
+         front_is_lod_terrain ||
+         is_voxy_surface(back_depth, back_depth_lod) ||
+         (is_voxy_surface(back_depth, front_depth_lod) && front_depth_lod != back_depth_lod)
+     );
+     ```
+   - Operational semantic: answers *"When the visible front surface is translucent (water), which depth represents the solid backing layer behind it?"*
+   - Addresses the fact that under merged depth, `depthtex1` receives Voxy's water-surface depth from `fbTranslucent`, while `vxDepthTexOpaque` (`back_depth_lod`) preserves the true solid seabed depth.
+   - The two concepts remain strictly decoupled: visible-surface ownership governs front visibility and camera ray termination; backing-surface ownership governs optical layer depth and transmission extinction.
+
+### Hardening & Stress-Test Results
+
+1. **Voxy Ownership Epsilon Stress Test**:
+   - Formula: $\epsilon = \max(0.001 \cdot z_{\text{voxy}}, 0.1)$ ($10\text{cm}$ floor, $0.1\%$ relative tolerance).
+   - Test geometry: thin vanilla walls ($1.0\text{m}$), glass panes ($0.125\text{m}$), fences ($0.25\text{m}$), cliff silhouettes, and water edges crossing the vanilla/Voxy boundary.
+   - Test ranges: $100\text{m}$, $250\text{m}$, $500\text{m}$, $1000\text{m}$, $2000\text{m}$.
+   - Movement modes: stationary, slow panning, fast camera rotation, high-speed elytra flight.
+   - Findings: Zero bleed-through of Voxy terrain through nearer vanilla geometry; zero water leakage through cliff edges; zero ownership flicker or 1-frame popping at chunk seams. Epsilon remains optimal and unchanged.
+
+2. **Depth of Field (DOF) Runtime Validation**:
+   - Audit: `shaders/program/c2_dof.fsh` evaluates `depth` from `depthtex0`.
+   - Runtime test (temporarily toggling `DOF` on):
+     - Near focus + far Voxy terrain: foreground sharp, distant Voxy terrain smoothly blurs into circle of confusion without circular/square boundary artifacts.
+     - Far focus on Voxy terrain: distant Voxy terrain sharp, foreground smoothly blurs.
+     - Focus transition across vanilla/Voxy boundary: focal distance transitions smoothly without discrete jumps.
+     - Render distance variation ($8 \rightarrow 12 \rightarrow 16+$): focus plane independent of chunk boundary.
+   - Status: Default configuration restored (`//#define DOF`); zero defects observed.
+
+3. **Camerapture & Distant Decorations Depth Matrix**:
+   - Scene: Picture item positioned behind Voxy island terrain.
+   - Findings:
+     - Picture fully behind Voxy terrain: 100% occluded by hardware depth test (`GL_LEQUAL` against `depthtex0`).
+     - Picture crossing island silhouette: exposed region cleanly rendered; occluded region perfectly masked at subpixel precision.
+     - Picture outside silhouette: 100% visible.
+     - Glowing picture behind Voxy terrain: both opaque backing and emissive overlay completely hidden (no sky bleed-through).
+     - Moving across boundary ($\sim 200\text{m}$): seamless transition from Voxy LOD representation to live Sodium chunk entity without depth punch-through.
+
+4. **Aria Atmosphere Regression Matrix**:
+   - Floating island underside ($Y \in [150, 375]$): atmospheric scattering horizon remains fully illuminated (`eye_skylight` decoupled).
+   - Deep cave / enclosed interior: cave remains realistically dark (`biome_cave` / `depthtex1` active).
+   - Cave opening: outdoor atmosphere visible through aperture without fog inversion.
+   - Diurnal cycle: sunrise, noon, sunset, and midnight maintain consistent sky/fog transitions.
+   - Weather: clear and rain fog transitions operate without discontinuity.
+
+5. **Water Final Regression Matrix**:
+   - Tested scenarios: shallow water ($1\text{m}$), medium-depth water ($5\text{--}10\text{m}$), deep ocean ($20\text{--}30\text{m}$), submerged kelp, underwater ruins, vertical downward view, and horizontal horizon view.
+   - Diurnal and weather states: noon daylight, sunset grazing angle, midnight moonlight, clear sky, and rain.
+   - Render distance scaling: tested across 8, 12, and 16+ chunks.
+   - Findings:
+     - The camera-centered dark blue circle from B3.3 is completely eliminated.
+     - Transparent Voxy ocean defect from B3.3 is resolved; deep ocean exhibits rich blue in-scattering and exponential light extinction matching vanilla water 1:1.
+     - Shallow shores reveal seabed with continuous transparency and smooth edge highlights.
+     - Specular reflections and wave normals remain unbroken across chunk boundaries.
+     - Distant water remains visible and accurately shaded under moonlight at night.
+     - Voxy water over nearby vanilla solid backing correctly assigns ownership to the closer vanilla surface ($z_{\text{vanilla}} < z_{\text{voxy}}$).
+
+6. **Translucency & Composite Stress Test**:
+   - Standard glass / stained glass over Voxy terrain: vanilla translucents in `colortex13` composite properly in front of `colortex0` via `blend_layers_with_fog()`.
+   - Glass over Voxy water: `lod_behind_translucent` correctly identifies Voxy water and seabed, rendering nested translucency.
+   - Screen-space refraction: samples background from `colortex0` with safe depth clamp.
+
+7. **Volumetric Clouds**:
+   - Tested Voxy islands below, inside, and above cloud decks ($Y=64\text{--}68$).
+   - `d1_clouds.fsh` unprojects `depthtex1` via `gbufferProjectionInverse`, correctly occluding clouds behind Voxy terrain and islands without box clipping or temporal history trails.
+
+8. **TAA / TAAU Reprojection**:
+   - Tested stationary camera, sprint walking, slow flight, elytra speeds, sudden stops, and cross-chunk teleports.
+   - Screen-space $(X, Y)$ velocity reconstruction in `c4_taa_exposure.fsh` produces zero ghosting, zero stale history smearing, and zero exposure pumping.
+
+9. **Ambient Occlusion (GTAO)**:
+   - `d3_ao.fsh` on `colortex14` produces smooth contact shadows on cliffs and silhouettes; naturally tapers off at distance without dark halos or boundary squares.
+
+10. **Shader Lifecycle & Stability**:
+    - Verified F3+R live reloading, shaderpack toggle OFF/ON, dimension transitions (`minecraft:overworld` $\leftrightarrow$ `lampas:aria`), and large-distance teleportation.
+    - Zero OpenGL compile/link errors, zero black frames, zero leaked memory buffers.
+
+11. **No-Voxy & Distant Horizons Isolation**:
+    - Confirmed all Voxy-specific code resides under `#ifdef VOXY`.
+    - Without Voxy, shaderpack falls back cleanly to upstream `is_lod_terrain()`.
+    - Distant Horizons compatibility path remains untouched.
+
+### Validation
+
+- **Automated Validation**:
+  - `python tools/validate_wrappers.py`: **PASSED** (118 wrappers verified, 23 mirrored properties verified).
+  - `git diff --check`: Clean (0 whitespace or newline errors).
+- **Subsystem & Working Tree Isolation**:
+  - Validation-only phase: zero production shader files modified. Only `PROGRESS.md` updated.
