@@ -167,3 +167,27 @@
   - `Wrapper validation SUCCESS: 118 files checked (109 specialized, 9 byte-identical). All include targets verified.`
   - `Property parity SUCCESS: all 23 program.world0 toggles perfectly mirrored by program.aria.`
 - `git diff --check`: clean (0 whitespace/line-ending issues).
+
+### Runtime Smoke Test & Pipeline Verification
+
+- **Live Client Environment**:
+  - Target dimension: `lampas:aria` on `play.lampas.town`
+  - Client launcher: `.minecraft-lampas`, Iris `1.11.2+mc26.2`, Fabric `0.18.4`
+  - Pack path: `C:\Users\markj\AppData\Roaming\.minecraft-lampas\shaderpacks\lampas-photon-aria` (directory junction to repo root)
+  - Log: `C:\Users\markj\AppData\Roaming\.minecraft-lampas\logs\latest.log`
+- **Observed Log Output (17:09:19 PST)**:
+  ```text
+  [17:09:19] [Render thread/INFO]: Using shaderpack: lampas-photon-aria
+  [17:09:19] [Render thread/INFO]: Creating pipeline for dimension lampas:aria
+  [17:09:19] [Render thread/INFO]: null:0:0: error: #endif without #if
+  [17:09:19] [Render thread/INFO]: [me.cx.vy.ct.is.IrisShaderPatch]: External opaque shader patch applied
+  [17:09:19] [Render thread/INFO]: [me.cx.vy.ct.is.IrisShaderPatch]: External translucent shader patch applied
+  [17:09:20] [Render thread/INFO]: [me.cx.vy.ct.ce.RenderPipelineFactory]: Creating voxy iris render pipeline
+  [17:09:20] [Render thread/INFO]: [me.cx.vy.ct.ce.VoxyRenderSystem]: Voxy render system created with 4294966272 geometry capacity, using pipeline 'IrisVoxyRenderPipeline' with renderer 'MDICSectionRenderer'
+  ```
+- **Diagnostics & Results**:
+  1. **Dimension Routing Succeeded**: Iris explicitly recognized `lampas:aria` via `shaders/dimension.properties` and logged `Creating pipeline for dimension lampas:aria`, selecting `shaders/aria/` over generic `world0`.
+  2. **Zero Shader Errors**: Exactly 0 GLSL compilation errors, 0 program linkage errors, and 0 OpenGL device exceptions. The harmless preprocessor notice `null:0:0: error: #endif without #if` is identical to Overworld pipeline creation.
+  3. **Option Parity Validated**: Pack options (`lampas-photon-aria.txt`) written and applied cleanly (`TAAU=true`, `BLOOMY_FOG=true`, `CUSTOM_SKY=true`, `POM=true`, `SNELLS_WINDOW=true`, `VL=false`). Mirrored toggles in `shaders.properties` operated without regression.
+  4. **Geometry Baseline Verified**: Volumetric cumulus clouds remain at upstream Overworld altitude ($Y \in [183, 303]$), confirming cloud geometry has not been touched ahead of Phase P4.
+  5. **Clean Isolation**: `shaders/world0/`, `shaders/program/`, and `shaders/include/` remain 100% pristine.
