@@ -97,3 +97,38 @@
   - `minecraft:the_end` -> `world1` (PASSED)
   - `somemod:custom_dim` -> `world0` (PASSED)
 - Git status and diff verified: only `shaders/dimension.properties` and `PROGRESS.md` modified.
+
+---
+
+## Phase P3 — Create Aria Shader Program Wrappers (Completed)
+
+### Scope
+
+- Structurally clone the entire `shaders/world0/` file inventory (all 118 files) into `shaders/aria/`.
+- For all 109 shader wrappers containing `#define WORLD_OVERWORLD`, insert `#define WORLD_ARIA` immediately adjacent to it.
+- Ensure all 9 files without `WORLD_OVERWORLD` (`gbuffers_clouds.*`, `gbuffers_skybasic.*`, `gbuffers_skytextured.*`, `setup.csh`, `shadowcomp.csh`, `voxy.json`) remain byte-identical to their `world0` counterparts.
+- Strictly preserve `shaders/world0/`, `shaders/program/`, and `shaders/include/` without modifications.
+- Create automated structural validation tool (`tools/validate_wrappers.py`) asserting inventory parity, macro placement, and byte-for-byte fidelity.
+- Prepare live junction link in `.minecraft-lampas\shaderpacks` for seamless in-game validation.
+
+### Acceptance Criteria
+
+1. Exact inventory match: `relative file set(world0) == relative file set(aria)` (118 files each).
+2. For all 109 wrappers with `WORLD_OVERWORLD`, Aria wrappers define both `WORLD_OVERWORLD` and `WORLD_ARIA`.
+3. Stripping `#define WORLD_ARIA` from the 109 Aria wrappers produces exact byte-for-byte identity with `world0`.
+4. The remaining 9 files are 100% byte-identical to `world0`.
+5. No changes exist under `shaders/world0/`, `shaders/program/`, or `shaders/include/`.
+6. Automated structural validation suite passes with 0 errors.
+
+### Summary of Completed Work
+
+- Cloned all 118 files from `shaders/world0/` to `shaders/aria/`.
+- Specialized 109 wrappers by inserting `#define WORLD_ARIA` immediately following `#define WORLD_OVERWORLD`.
+- Maintained exact byte-identity for all 9 non-Overworld wrapper and configuration files (`gbuffers_clouds.fsh`, `gbuffers_clouds.vsh`, `gbuffers_skybasic.fsh`, `gbuffers_skybasic.vsh`, `gbuffers_skytextured.fsh`, `gbuffers_skytextured.vsh`, `setup.csh`, `shadowcomp.csh`, `voxy.json`).
+- Created `tools/validate_wrappers.py` which performs automated assertions over the entire inventory.
+- Created live test junction `C:\Users\markj\AppData\Roaming\.minecraft-lampas\shaderpacks\lampas-photon-aria` pointing directly to this workspace.
+
+### Validation
+
+- `python tools/validate_wrappers.py`: **PASSED** (118/118 files verified; 109 specialized with `WORLD_ARIA`, 9 byte-identical).
+- `git diff shaders/world0 shaders/program shaders/include`: zero changes.
