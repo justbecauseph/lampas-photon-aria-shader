@@ -9,7 +9,7 @@
             #include "/settings.glsl"
         ",
     "version": 1,
-    "excludeLodsFromVanillaDepth": true,
+    "excludeLodsFromVanillaDepth": false,
     "opaqueDrawBuffers": [
         1
     ],

@@ -128,7 +128,6 @@ float texture_min_4x4(sampler2D s, vec2 coord) {
 
 vec3 reproject_clouds(vec2 uv, float distance_to_cloud) {
     const float planet_radius = 6371e3;
-    const float clouds_cumulus_radius = planet_radius + CLOUDS_CUMULUS_ALTITUDE;
     const float clouds_altocumulus_radius =
         planet_radius + CLOUDS_ALTOCUMULUS_ALTITUDE;
     const float clouds_cirrus_radius = planet_radius + CLOUDS_CIRRUS_ALTITUDE;
@@ -258,7 +257,11 @@ void main() {
         float view_distance_squared =
             length_squared(screen_to_view_space(vec3(uv, depth), true));
         if (view_distance_squared < sqr(closest_distance) || is_hand) {
+#ifdef WORLD_ARIA
+            clouds_history = vec4(0.0, 0.0, 0.0, 1.0);
+#else
             clouds_history = current;
+#endif
             clouds_data.x = 1e6; // apparent distance
             clouds_data.y = 0.0; // pixel age
             clouds_data.z = 0.0; // ambient scattering
@@ -306,6 +309,13 @@ void main() {
     disocclusion = disocclusion || history_depth == 0.0; // Signals hand
     disocclusion = disocclusion || any(isnan(history));
     disocclusion = disocclusion || world_age_changed;
+
+#ifdef WORLD_ARIA
+    // Compare before history replacement or neighbourhood clamping can hide
+    // a transition between clear sky and cloud. Apply only to the fresh pixel.
+    bool cloud_presence_changed =
+        (current.w < 0.999) != (history.w < 0.999);
+#endif
 
     // Replace history if a disocclusion was detected
     if (disocclusion) {
@@ -360,12 +370,25 @@ void main() {
         clouds_checkerboard_offsets[frameCounter % checkerboard_area];
     if (offset_0 != offset_1 && !disocclusion) {
         current = history;
+#ifdef WORLD_ARIA
+        apparent_distance = apparent_distance_history;
+#else
         apparent_distance = min(apparent_distance, apparent_distance_history);
+#endif
         ambient_scattering = history_data.z;
     }
 
     float pixel_age = max0(history_data.y) * float(!disocclusion);
     float history_weight = 1.0 - rcp(max(pixel_age - checkerboard_area, 1.0));
+
+#ifdef WORLD_ARIA
+    // The low-res sample belongs to just one pixel of this checkerboard tile.
+    // Rejecting the other pixels from it would discard their valid history.
+    if (offset_0 == offset_1 && cloud_presence_changed) {
+        history_weight = 0.0;
+        pixel_age = 0.0;
+    }
+#endif
 
 #ifndef TAAU
     // Offcenter rejection
