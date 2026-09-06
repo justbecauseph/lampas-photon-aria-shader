@@ -1,5 +1,23 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## PERF1 Self-review Follow-up (Completed)
+
+### Scope and Acceptance Criteria
+
+- Review `2b22a01` against `d6899b2` directly, including cloud metadata consumers and the regression validator.
+- Repair the reproduced validator gap: in-memory changes to cloud transmittance and the empty-distance sentinel must fail validation, while the committed shader paths pass.
+- Keep shader implementation unchanged unless review establishes a rendering defect; do not begin PERF2.
+- Record results, commit and push the review follow-up, and retain the explicit lack of live GLSL/GPU validation.
+
+### Findings and Resolution
+
+- No blocking shader implementation defects found in the four modified includes. Positive-length paths remain unchanged; zero-length cloud metadata preserves entry distance for positive effective density and 1e6 for empty density. Non-Aria source parity remains verified.
+- Found a validator coverage defect: the Python metadata model passed even when in-memory GLSL copies returned zero transmittance or a wrong empty sentinel. The existing source checks did not inspect cloud outputs.
+- Added checks of the actual GLSL fast-path return values for neutral scattering/transmittance and the legacy empty-distance sentinel.
+- `python tools/validate_perf1.py`: passed 37 checks. Four in-memory mutations (wrong ternary sentinel, wrong early-return sentinel, zero transmittance, nonzero scattering) were each rejected after the fix.
+- `python tools/validate_wrappers.py`: passed 118 wrappers and 23 mirrored properties. `git diff --check`: passed.
+- Self-review verdict: PERF1 approved at source-review level. These focused checks do not compile/execute GLSL or establish floating-point equivalence on a GPU, visual equivalence, or a measured speedup. Shader files were unchanged during this follow-up; PERF2 remains unstarted.
+
 ## Phase PERF1 — Skip Non-contributing Aria Atmosphere Work (Completed)
 
 ### Scope

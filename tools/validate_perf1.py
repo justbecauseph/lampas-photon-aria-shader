@@ -221,6 +221,22 @@ def run(baseline: str) -> int:
         march = source.index("for (uint i = 0u", guard)
         check(f"{path}: zero interval guard precedes primary march", clamp < guard < march)
         check(f"{path}: zero interval guard checks exact zero", "if (ray_length == 0.0)" in source[guard:march])
+        # Check the actual GLSL outputs, independently of the Python metadata
+        # model below. Otherwise wrong shader return values escape that model.
+        fast_source = re.sub(r"//[^\n]*", "", source[guard:source.index("vec2 scattering", guard)])
+        outputs = re.findall(
+            r"return\s+CloudsResult\(\s*vec4\(([^)]+)\)\s*,\s*([^,]+),\s*([^)]+)\);",
+            fast_source,
+        )
+        check(f"{kind}: fast-path outputs are neutral", bool(outputs) and all(
+            float(scattering) == 0.0 and float(transmittance) == 1.0
+            for scattering, transmittance, _ in outputs
+        ))
+        distances = [distance.strip() for _, _, distance in outputs]
+        sentinel = re.search(r"float\s+apparent_distance\s*=.*?:\s*([^;]+);", fast_source, re.S)
+        check(f"{kind}: shader retains empty-distance sentinel", sentinel is not None
+              and float(sentinel.group(1)) == 1e6
+              and all(distance == "apparent_distance" or float(distance) == 1e6 for distance in distances))
         cases = ((0.2, 1.0, "density above epsilon"), (0.0, 1.0, "density below epsilon"),
                  (1e-6, 1.0, "density exactly epsilon"))
         if kind == "cumulus":
