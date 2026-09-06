@@ -1,5 +1,23 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase PERF3 — Paired Bloom Interior Filtering (Completed)
+
+### Scope and Acceptance Criteria
+
+- Pair the existing positive binomial coefficients into five linear samples for each one-dimensional bloom blur, at explicit mip level zero and texel-center coordinates.
+- Use the fast path only when all nine legacy taps lie within that tile's valid padded bounds; retain the entire legacy edge kernel and vertical padding behavior otherwise.
+- Preserve the kernel sum, radius, and output within floating-point/texture-interpolation tolerance. Do not change bloom tile allocation, downsample passes, or intensity.
+- Parent review verifies bounds and weights; numerical fixtures compare constant, impulse, alternating, and random signals and check tiny tiles. Run available compilation and existing validators before committing/pushing.
+
+### Implementation, Review, and Validation
+
+- Luna implemented five explicit level-zero samples using texel-center coordinates and paired weights 0.328125 at +/-4/3 and 0.03515625 at +/-28/9, plus center weight 0.2734375.
+- Independent Luna numerical review found constant/impulse/alternating/random errors no larger than 3.55e-15 in double-precision models; weights sum to one. Actual GPU filtering precision is not represented by that model.
+- Parent review confirmed the interior test is exactly the nine-tap padded support; original edge kernels and vertical padding are unchanged. Tiny tiles retain their existing fallback.
+- Inspected deployed `iris-fabric-1.11.2+mc26.2.jar` bytecode: RenderTarget chooses LINEAR/MIPPED_LINEAR for non-integer color targets, including this pack's R11F_G11F_B10F colortex0. Linear filtering is supported by the inspected loader path.
+- Both changed bloom fragment programs and their pre-phase equivalents compiled with official Khronos glslang 11.13.0 after temporary include expansion and shaderpack macro setup. This is standalone GLSL compilation, not an Iris driver/link/runtime test.
+- PERF1's 37 checks, 118-wrapper/23-property validation, and `git diff --check` passed. Self-review approved; no GPU timing or live visual comparison claimed.
+
 ## Remaining Performance Work — Execution Scope
 
 - User authorized continued iteration with self-review between phases. Each phase is still validated, recorded, committed, and pushed before the next phase begins.

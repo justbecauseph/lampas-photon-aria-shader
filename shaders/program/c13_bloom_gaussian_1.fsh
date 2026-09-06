@@ -69,6 +69,40 @@ void main() {
         return;
     }
 
+    if (texel.y - 4 >= bounds_min.y + 2 &&
+        texel.y + 4 <= bounds_max.y - 2) {
+        vec2 texture_size = vec2(textureSize(colortex0, 0));
+        vec2 texel_uv = (vec2(texel) + 0.5) / texture_size;
+        vec2 sample_offset = vec2(0.0, 1.0) / texture_size;
+
+        bloom_tiles = textureLod(colortex0, texel_uv, 0.0).rgb * 0.2734375;
+        bloom_tiles += textureLod(
+                          colortex0,
+                          texel_uv + sample_offset * (4.0 / 3.0),
+                          0.0
+                      )
+                          .rgb * 0.328125;
+        bloom_tiles += textureLod(
+                          colortex0,
+                          texel_uv - sample_offset * (4.0 / 3.0),
+                          0.0
+                      )
+                          .rgb * 0.328125;
+        bloom_tiles += textureLod(
+                          colortex0,
+                          texel_uv + sample_offset * (28.0 / 9.0),
+                          0.0
+                      )
+                          .rgb * 0.03515625;
+        bloom_tiles += textureLod(
+                          colortex0,
+                          texel_uv - sample_offset * (28.0 / 9.0),
+                          0.0
+                      )
+                          .rgb * 0.03515625;
+        return;
+    }
+
     // Vertical 9-tap gaussian blur
 
     bloom_tiles = vec3(0.0);
