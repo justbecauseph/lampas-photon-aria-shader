@@ -6,6 +6,7 @@
 #include "/include/misc/raytracer.glsl"
 #include "/include/sky/projection.glsl"
 #include "/include/surface/material.glsl"
+#include "/include/surface/water_detail.glsl"
 #include "/include/utility/bicubic.glsl"
 #include "/include/utility/dithering.glsl"
 #include "/include/utility/random.glsl"
@@ -407,6 +408,40 @@ vec3 get_specular_reflections(
     float v1 = v1_smith_ggx(NoV, alpha_squared);
     float v2 = v2_smith_ggx(NoL, NoV, alpha_squared);
 
+#if WATER_DETAIL_DISTANCE > 0 && defined ENVIRONMENT_REFLECTIONS
+    float detail = is_water ? water_detail_weight(world_pos) : 1.0;
+    vec3 reflection;
+
+    if (detail == 0.0) {
+#ifdef SKY_REFLECTIONS
+        reflection = get_sky_reflection(ray_dir, skylight, vec3(0.0));
+#else
+        reflection = vec3(0.0);
+#endif
+    } else {
+        reflection = trace_specular_ray(
+            screen_pos,
+            view_pos,
+            world_pos,
+            ray_dir,
+            dither,
+            skylight,
+            SSR_INTERSECTION_STEPS_SMOOTH,
+            SSR_REFINEMENT_STEPS,
+            0
+        );
+
+        if (detail < 1.0) {
+#ifdef SKY_REFLECTIONS
+            vec3 sky_reflection =
+                get_sky_reflection(ray_dir, skylight, vec3(0.0));
+#else
+            const vec3 sky_reflection = vec3(0.0);
+#endif
+            reflection = mix(sky_reflection, reflection, detail);
+        }
+    }
+#else
     vec3 reflection = trace_specular_ray(
         screen_pos,
         view_pos,
@@ -418,6 +453,7 @@ vec3 get_specular_reflections(
         SSR_REFINEMENT_STEPS,
         0
     );
+#endif
     reflection *= albedo_tint * fresnel;
 
     if (any(isnan(reflection))) {

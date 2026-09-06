@@ -465,12 +465,25 @@ void main() {
 
 #ifdef WATER_PARALLAX
             vec3 direction_tangent = direction_world * tbn_fixed;
+#if WATER_DETAIL_DISTANCE > 0
+            float water_detail = water_detail_weight(world_pos);
+            if (water_detail > 0.0) {
+                vec2 parallax_coord = get_water_parallax_coord(
+                    direction_tangent,
+                    coord,
+                    flow_dir,
+                    flowing_water
+                );
+                coord = mix(coord, parallax_coord, water_detail);
+            }
+#else
             coord = get_water_parallax_coord(
                 direction_tangent,
                 coord,
                 flow_dir,
                 flowing_water
             );
+#endif
 #endif
 
             normal_tangent = get_water_normal(

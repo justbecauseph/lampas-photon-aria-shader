@@ -1,5 +1,32 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase PERF4 — Optional Distant Water Detail (Completed)
+
+### Scope and Acceptance Criteria
+
+- Add `WATER_DETAIL_DISTANCE` with default 0 (disabled) and supported distances 64/128/256/512 blocks, exposed with English option text.
+- Use one shared world-distance weight: full detail through half the selected distance, smoothly reaching zero at the selected distance.
+- Fade procedural water normals and vanilla water parallax using that weight; skip their expensive evaluation at zero weight. The shared normal helper also covers composite Voxy/DH water.
+- Fade smooth water screen-space reflections toward the existing sky-only fallback, skipping the depth ray at zero weight. Keep non-water reflections unchanged and respect SKY_REFLECTIONS being disabled.
+- No default preset enables the option. Default-disabled shader branches must retain existing behavior, with no change to Voxy depth ownership, absorption, alpha compositing, fog, or wave displacement.
+- Review near/far/end-point behavior and default-path parity; compile affected fragment paths with the option enabled and disabled under available standalone shader contexts; run existing checks, commit/push, and close the scoped audit implementation.
+
+### Implementation and Parent Review
+
+- Luna implemented the shared distance helper, weighted normals/parallax, and smooth water reflection fallback. The setting is exposed as Water > Water Waves > Distant Water Detail, with Off as the default and no preset enabling it.
+- Parent review verified that zero detail returns the tangent-space flat normal before wave evaluation, skips the parallax call, and skips the screen-space reflection ray while retaining Fresnel, tint, SSR multiplier, and NaN handling. Partial detail blends continuously; non-water reflection paths retain full detail.
+- Review refinement gates reflection specialization on ENVIRONMENT_REFLECTIONS as well as the distance option, avoiding extra distance/fallback work in builds that already use sky-only reflections. SKY_REFLECTIONS-off builds use the existing zero fallback.
+- Default-disabled source parity passed for water_normal.glsl, gbuffers_all_translucent.fsh, and specular_lighting.glsl after removing the new conditional branches and unused helper include. No water height/displacement, depth ownership, absorption, compositing, or fog code changed.
+- All four enabled distances passed exact endpoint/midpoint, bounded-weight, and monotonicity checks. These are mathematical/source checks, not GPU output comparisons.
+
+### Compilation, Validation, and Closeout
+
+- Twenty-two Aria fragment variants passed standalone semantic compilation: gbuffers_water with no LOD/VOXY/sky-reflections-off, and composite1/deferred4 with no LOD/VOXY/DH/sky-reflections-off, each at detail 0 and 128. Sky-off cases retained environment reflections. Two additional non-Aria water variants (0/128) and an Aria sky-only enabled-detail variant passed, for 25 checks total.
+- Compiler boundary: original GLSL 400 wrapper compilation stops at existing multiline preprocessor directives (`line continuation` unsupported). The prior baseline blend shader reproduces that error. Semantic checks used temporary GLSL 460 compatibility copies with generated-context macros; repository wrapper versions were not changed. These results do not establish Iris preprocessing, driver linking, or runtime acceptance.
+- Earlier standalone checks also covered Aria AO=None with no LOD/VOXY/DH, the LPV compute wrapper, cloud integration, blend layers, and both bloom passes. Their temporary fragment contexts likewise used GLSL 460 compatibility; LPV used its compute context. Baseline/current fragment comparisons compiled successfully in those contexts.
+- Final PERF1 validator passed 37 checks; wrapper validation passed 118 files and 23 mirrored properties; `git diff --check` passed. Parent self-review approved the scoped implementation.
+- PERF1 through PERF4 implement all seven scoped performance opportunities. The optional water tradeoff remains Off by default. Live visual comparison and controlled GPU timing remain unverified; no measured speedup or visual acceptance is claimed. The separate cloud-shell/fog coverage correctness issue remains outside this audit implementation.
+
 ## Phase PERF3 — Paired Bloom Interior Filtering (Completed)
 
 ### Scope and Acceptance Criteria

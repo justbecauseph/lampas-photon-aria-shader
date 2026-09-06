@@ -2,6 +2,7 @@
 #define INCLUDE_MISC_WATER_NORMAL
 
 #include "/include/utility/space_conversion.glsl"
+#include "/include/surface/water_detail.glsl"
 
 float gerstner_wave(
     vec2 coord,
@@ -135,6 +136,13 @@ vec3 get_water_normal(
     float skylight,
     bool flowing_water
 ) {
+#if WATER_DETAIL_DISTANCE > 0
+    float detail = water_detail_weight(world_pos);
+    if (detail == 0.0) {
+        return vec3(0.0, 0.0, 1.0);
+    }
+#endif
+
     vec2 wave_dir;
     mat2 wave_rot;
     float t;
@@ -158,6 +166,9 @@ vec3 get_water_normal(
         abs(dot(flat_normal, normalize(world_pos - cameraPosition)))
     ); // prevent noise when looking horizontally
     normal_influence *= WATER_WAVE_STRENGTH;
+#if WATER_DETAIL_DISTANCE > 0
+    normal_influence *= detail;
+#endif
 
     vec3 normal = vec3(wave1 - wave0, wave2 - wave0, h);
     normal.xy *= normal_influence;

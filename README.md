@@ -12,7 +12,7 @@ Unpatched Photon v1.3b under Iris treats `lampas:aria` as generic `world0` (Over
 2. **Under-Island Black Atmospheric Void**: Unpatched Photon derives camera skylight from vertical ceiling clearance (`eyeBrightness.y / 240.0`). Standing underneath any floating island forces `eye_skylight \approx 0.0`. In the upstream analytic atmosphere, atmospheric in-scattering is scaled by `max(skylight, eye_skylight)`. When standing under an island overhang, in-scattering is multiplied by zero, causing the surrounding daytime sky dome and distant island silhouettes against the horizon to collapse into a pitch-black void (`#000000`).
 3. **Low-Altitude Cloud Temporal Artifacts**: Re-anchoring clouds to a thin shell at $Y \in [64, 68]$ triggers checkerboard reprojection and history invalidation artifacts in high-ratio temporal upscaling (16×) when crossing cloud boundaries.
 
-This repository provides a dedicated Iris dimension specialization that resolves these defects while leaving 100% of standard Overworld, Nether, and End rendering pipelines untouched.
+This repository provides a dedicated Iris dimension specialization for these defects, alongside shared rendering optimizations and Voxy compatibility fixes. Standard Overworld, Nether, and End dimension routing is retained.
 
 ---
 
@@ -43,8 +43,12 @@ This repository provides a dedicated Iris dimension specialization that resolves
 - **Voxy LOD Depth Compatibility**:
   - Configured `voxy.json` with `excludeLodsFromVanillaDepth: false` to ensure seamless depth integration between Voxy LOD terrain and block entities.
 
-- **Zero Upstream Regression**:
-  - Upstream files in `shaders/world0/`, `shaders/program/`, and `shaders/include/` retain identical `#else` logic matching stock Photon v1.3b.
+- **Performance Improvements**:
+  - Aria skips fully faded cloud shadows, empty cloud/fog marches, and temporal AO filtering when shader AO is disabled.
+  - Bloom uses five filtered samples in tile interiors while preserving its original edge filter. LPV colored lighting skips neighbor reads for voxels with zero light transmission.
+  - Low/Medium/High/Ultra presets explicitly select None/SSAO/GTAO/GTAO for shader ambient occlusion.
+  - **Water → Water Waves → Distant Water Detail** optionally fades water surface detail and screen-space reflections with distance. The default **Off** preserves full detail. Selecting a distance retains full detail through half that distance, then fades to flat surface normals and sky reflections; at the selected distance, procedural normal/parallax and water reflection ray work is skipped. This trades distant visual detail for less shading work and applies consistently to regular water and the composite Voxy/DH water path.
+  - Standalone shader compilation and targeted source/numerical checks are recorded in `PROGRESS.md`. Performance gains and visual equivalence have not been measured in a live client.
 
 ---
 

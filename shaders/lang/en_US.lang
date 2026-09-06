@@ -578,6 +578,13 @@ option.WATER_DISPLACEMENT              = Water Displacement
 option.WATER_DISPLACEMENT.comment      = Similar to how waving leaves work, it makes the water geometry itself wave slightly, so the shore line appears less flat
 option.WATER_WAVES_HEIGHT_VARIATION           = Local Height Variation 
 option.WATER_WAVES_HEIGHT_VARIATION.comment   = The height of water waves varies in space
+option.WATER_DETAIL_DISTANCE                 = Distant Water Detail
+option.WATER_DETAIL_DISTANCE.comment         = Fades water normals, parallax, and screen-space reflections beyond half the selected distance. Off retains full detail
+value.WATER_DETAIL_DISTANCE.0                = Off
+value.WATER_DETAIL_DISTANCE.64               = 64 blocks
+value.WATER_DETAIL_DISTANCE.128              = 128 blocks
+value.WATER_DETAIL_DISTANCE.256              = 256 blocks
+value.WATER_DETAIL_DISTANCE.512              = 512 blocks
 
 option.WATER_ABSORPTION_R              = Red Absorption
 option.WATER_ABSORPTION_G              = Green Absorption
@@ -747,4 +754,3 @@ option.BOX_COLOR_B              = Blue
 option.BOX_EMISSION             = Emission
 option.BOX_EMISSION.comment     = Scales color past 1. Requires bloom.
 option.BOX_LINE_WIDTH           = Line Width
-
