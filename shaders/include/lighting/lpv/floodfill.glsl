@@ -86,6 +86,19 @@ vec3 gather_light(sampler3D light_sampler, ivec3 pos) {
 }
 
 void update_lpv(writeonly image3D light_img, sampler3D light_sampler) {
+    ivec3 pos = ivec3(gl_GlobalInvocationID);
+
+    uint block_id = texelFetch(voxel_sampler, pos, 0).x;
+    bool transparent = block_id == 0u || block_id >= 128u;
+    block_id = block_id & 127;
+    vec3 emitted_light = sqr(get_emitted_light(block_id));
+    vec3 tint = sqr(get_tint(block_id, transparent));
+
+    if (all(equal(tint, vec3(0.0)))) {
+        imageStore(light_img, pos, vec4(emitted_light, 0.0));
+        return;
+    }
+
     vec3 current_center =
         get_voxel_volume_center(gbufferModelViewInverse[2].xyz);
     vec3 previous_center = get_voxel_volume_center(vec3(
@@ -93,20 +106,11 @@ void update_lpv(writeonly image3D light_img, sampler3D light_sampler) {
         gbufferPreviousModelView[1].z,
         gbufferPreviousModelView[2].z
     ));
-
-    ivec3 pos = ivec3(gl_GlobalInvocationID);
     ivec3 previous_pos = ivec3(
         vec3(pos) - floor(previousCameraPosition) + floor(cameraPosition) -
         current_center + previous_center
     );
-
-    uint block_id = texelFetch(voxel_sampler, pos, 0).x;
-    bool transparent = block_id == 0u || block_id >= 128u;
-    block_id = block_id & 127;
     vec3 light_avg = gather_light(light_sampler, previous_pos);
-    vec3 emitted_light = sqr(get_emitted_light(block_id));
-    vec3 tint = sqr(get_tint(block_id, transparent));
-
     vec3 light = emitted_light + light_avg * tint;
 
     imageStore(light_img, pos, vec4(light, 0.0));

@@ -1,5 +1,32 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Remaining Performance Work — Execution Scope
+
+- User authorized continued iteration with self-review between phases. Each phase is still validated, recorded, committed, and pushed before the next phase begins.
+- PERF2: repair preset AO selection, specialize AO=None without dropping cloud depth history, and skip LPV neighbor reads when their tint is exactly zero.
+- PERF3: reduce bloom blur interior sampling from nine nearest fetches to five linear fetches, retaining the original boundary filter and tile padding.
+- PERF4: provide an optional distance-dependent water detail setting, disabled by default, with consistent vanilla/Voxy transitions; retain current water appearance by default.
+- The separate cloud-shell/fog clipping correctness changes remain outside this performance scope because they change integration coverage and can increase shading work.
+- Acceptance: intended options select the right code paths; neutral-output/depth/emission contracts hold; filter weights match numerically; default water paths remain unchanged; available structural, compile, and targeted checks pass; no unmeasured FPS claim is made.
+
+## Phase PERF2 — Presets, Disabled AO, and Opaque LPV Voxels (Completed)
+
+### Scope and Acceptance Criteria
+
+- Replace obsolete GTAO preset tokens with explicit SHADER_AO selections: None for Low, SSAO for Medium, GTAO for High/Ultra.
+- Specialize Aria AO=None to output neutral AO/current normal and valid depth/hand metadata without sampling temporal AO history. Preserve existing SSAO/GTAO paths and non-Aria behavior.
+- Compute LPV tint/emission before gathering neighbor light; skip the gather for exactly zero tint while always writing emitted light and clearing stale values.
+- Verify disabled AO depth consumers, light propagation block classes, preset names, and existing phase/wrapper checks. Record actual compile/runtime coverage separately.
+
+### Implementation, Review, and Validation
+
+- Luna implemented explicit preset selections and Aria AO=None specialization. Parent review retained the legacy off-screen reprojection depth sentinel and hand override, so clouds keep their existing depth-history convention. Pixel age is zero because this path does not accumulate AO; current normals replace temporal normal smoothing when shader AO is disabled.
+- Luna implemented the LPV zero-tint early store/return before previous-position math and seven light-volume reads. Transparent flag masking and emission are retained.
+- Parent numerical audit passed 1,024 finite-input LPV cases covering all 256 raw voxel IDs and zero/colored tint cases. All four preset values match declared settings.
+- Active-AO and non-Aria AO source parity passed after excluding the new conditional branch. Cloud depth consumers were reviewed directly.
+- PERF1's 37 checks, 118-wrapper/23-property validation, and `git diff --check` passed.
+- Self-review approved the phase. Live rendering/performance remains unverified; compiler/toolchain discovery continues independently.
+
 ## PERF1 Self-review Follow-up (Completed)
 
 ### Scope and Acceptance Criteria

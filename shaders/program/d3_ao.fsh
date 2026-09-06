@@ -149,6 +149,21 @@ void main() {
 
     vec3 view_normal = mat3(gbufferModelView) * world_normal;
 
+#if defined WORLD_ARIA && SHADER_AO == SHADER_AO_NONE
+    // Aria's disabled AO remains neutral while retaining depth and hand metadata.
+    ambient = vec4(1.0, 0.0, view_normal.xy * 0.5 + 0.5);
+    ambient_history_data = vec2(
+        clamp01(previous_screen_pos.xy) == previous_screen_pos.xy
+            ? 1.0 - depth
+            : 0.0,
+        0.0
+    );
+    if (is_hand) {
+        ambient_history_data.x = 1.0;
+    }
+    return;
+#endif
+
     dither = r2(frameCounter, dither);
 
     // Calculate AO
