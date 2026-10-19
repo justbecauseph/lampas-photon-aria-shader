@@ -111,6 +111,32 @@ def main() -> int:
     for name in profiles:
         check_cycle(name, ())
 
+    # Iris applies only the options a profile lists, so an option that one
+    # profile sets and another omits keeps the old profile's value after
+    # switching (shown as "+N options changed by user").
+    def resolve(name: str, seen: tuple[str, ...] = ()) -> dict[str, str]:
+        options: dict[str, str] = {}
+        if name in seen or name not in profiles:
+            return options
+        for token in profiles[name]:
+            if token.startswith("profile."):
+                options.update(resolve(token[len("profile."):], seen + (name,)))
+            elif token.startswith("!"):
+                options[token[1:]] = "false"
+            elif "=" in token:
+                option, value = token.split("=", 1)
+                options[option] = value
+            else:
+                options[token] = "true"
+        return options
+
+    resolved = {name: resolve(name) for name in profiles}
+    touched = set().union(*(set(options) for options in resolved.values())) if resolved else set()
+    for name, options in resolved.items():
+        missing = sorted(touched - set(options))
+        if missing:
+            errors.append(f"profile.{name}: does not set {', '.join(missing)}, which other profiles set")
+
     screens = {k[len("screen."):] for k in properties if k.startswith("screen.") and "." not in k[len("screen."):]}
     unresolved: set[str] = set()
     for key, value in properties.items():

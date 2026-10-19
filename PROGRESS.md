@@ -78,6 +78,11 @@
   - The frame rate sat at the 120 FPS VSync cap (p98 93 FPS) with the F3 profiler open, so the speedup is still unmeasured.
   - Lighting looks flat without sun shadows or AO, and TAAU at 0.67 softens the image, as expected for this preset.
   - Aria, caves, Nether, End and Voxy water were not checked under Lowest.
+- Defect found in game and fixed. After switching from Lowest to High, Iris showed `Profile: high (+14 options changed by user)` and `Shadows: C: 0/5832`.
+  - Cause: Iris applies only the options a profile lists, so the 14 options Lowest changes kept Lowest's values. Shadows stayed off and TAAU stayed on, among others.
+  - Fix: Low, Medium, High and Ultra now set those 14 options to their `settings.glsl` defaults. Lowest still inherits Low and overrides them, since later tokens replace included ones (`Profile.Builder`).
+  - This reverses the earlier "existing profiles byte-identical" criterion: profile values are unchanged, but each existing line now lists the 14 defaults explicitly.
+  - `tools/validate_profiles.py` now fails when any option set by one profile is missing from another. It reports the pre-fix lines as failures.
 
 ## Phase U2 — Subgroup Sky SH Reduction (Completed)
 
