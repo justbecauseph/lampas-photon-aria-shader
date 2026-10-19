@@ -7,7 +7,7 @@
 - The tag-triggered `Release Package` workflow (run 39237013524) failed at `actions/upload-artifact`: the account's Actions artifact storage quota was full. Its release step never ran.
 - The release was published with `gh release create --verify-tag`, using `git archive v1.1.0 shaders LICENSE`. Both assets (`lampas-photon-aria-v1.1.0.zip` and `lampas-photon-aria.zip`) have the same digest, sha256 `563cf675…feefcf`.
 - Validators run before tagging: wrapper, profile and PERF1.
-- The Lampas pack (`lampas-pipeline`) has not been updated and still ships the `d6899b2` build.
+- Shipped in Lampas pack 2.3.65, published to the Portal (`https://dev.lampas.town`) on the dev, beta and stable channels on 2026-10-19. The same release also carries lampas-addons 1.0.9 and Apotheosis 10.0.8, and drops `seus-ptgi-hrr-reforged.zip`; those changes were staged by other sessions. Before publishing, `lampasctl validate`, `typecheck` and `bun test` passed (445 pass, 1 skip, 0 fail). After publishing, all three channel pointers read 2.3.65, and the shader blob downloaded from the Portal matches sha256 `563cf675…`. No `lampas-pack-v2.3.65` tag was created.
 
 ## Phase LS1 — Lowest Preset for Integrated and GTX 1050-Class GPUs (Completed; FPS unverified)
 
