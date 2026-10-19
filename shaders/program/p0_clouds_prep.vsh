@@ -97,6 +97,6 @@ void main() {
     gl_Position = vec4(gl_Vertex.xy * 2.0 - 1.0, 0.0, 1.0);
 }
 
-#ifndef CLOUD_SHADOWS
-#error "This program should be disabled if Cloud Shadows are disabled"
+#if !defined CLOUD_SHADOWS && !defined CLOUDS_CUMULUS_PRECOMPUTE_LOCAL_COVERAGE
+#error "This program should be disabled if Cloud Shadows and the cumulus coverage map are disabled"
 #endif

@@ -1,6 +1,6 @@
 # Photon Shader for Lampas Aria — Progress Log
 
-## Phase LS1 — Lowest Preset for Integrated and GTX 1050-Class GPUs (Scoped)
+## Phase LS1 — Lowest Preset for Integrated and GTX 1050-Class GPUs (Completed; FPS unverified)
 
 ### Context
 
@@ -45,6 +45,32 @@
 - With `!SHADOW`, programs compile and render without black or broken lighting in all listed scenes. Voxy terrain and distant water render, and the Aria under-island horizon stays bright.
 - In every test scene, lowest has a lower frame time than low. All numbers are recorded here with the hardware used; no speedup is claimed beyond the measured values.
 - Existing low/medium/high/ultra profiles and the High default are byte-identical. PERF1 and wrapper validators and `git diff --check` pass.
+
+### Implementation and Static Validation
+
+- `profile.lowest` = `profile.low` plus:
+  - `!SHADOW`, and `TAAU` with `TAAU_RENDER_SCALE=0.67`;
+  - cumulus at 20/10 primary steps and 3 lighting steps;
+  - cumulus congestus, cirrus and noctilucent clouds off;
+  - crepuscular rays at 10/2 steps;
+  - `!CLOUD_SHADOWS`;
+  - `WATER_WAVE_ITERATIONS=2` and `WATER_DETAIL_DISTANCE=64`.
+- Iris scans profiles with more constraints first (`ProfileSet`), so it reports the superset `lowest` correctly rather than as Low. The English name is `§cLowest`.
+- `tools/validate_profiles.py` checks profile tokens, value lists, includes and menu entries, with an allowlist of 5 menu gaps inherited from upstream. It passes for all 5 profiles. Run against the shipped `d6899b2` properties, it reports the four stale `GTAO` tokens that Iris logs as `Invalid pack option`.
+- Fixed two upstream bugs that the lowest preset exposes:
+  - `p0_clouds_prep.vsh` raised `#error` whenever `CLOUD_SHADOWS` was off, but the Overworld/Aria `prepare` program is never disabled and still builds the cumulus coverage map. The `#error` now fires only when both features are off, and the fragment shader writes a neutral cloud-shadow value when cloud shadows are off.
+  - `c3_taau_prep.fsh` (the TAAU pass) ended with an unmatched `#endif`, which glslang rejects.
+- Standalone glslang compiled every wrapper in world0, Aria, Nether and End, plus Voxy variants of the main deferred and composite passes and both Voxy patches, under the default, `low` and `lowest` option sets: 454/478 each. The 24 failures are the same programs in every set, all disabled by those settings: `composite2` (DOF), `setup`/`shadowcomp` (colored lights) and `dh_*` (no Distant Horizons macros in the harness).
+- Profile, PERF1 and wrapper validators and `git diff --check` pass. The existing profile lines are unchanged.
+
+### Closeout
+
+- The owner closed LS1 without the in-game measurements (2026-10-19).
+- Unverified acceptance criteria:
+  - lowest has a lower frame time than low in every scene;
+  - no `Invalid pack option` or new unresolved-menu warning in `latest.log`;
+  - `!SHADOW` scenes render correctly (Overworld, Aria under-island, cave, Nether, End, Voxy terrain and water).
+- No speedup is claimed. The measurement protocol above remains the way to verify it and to tune the values.
 
 ## Phase U2 — Subgroup Sky SH Reduction (Completed)
 

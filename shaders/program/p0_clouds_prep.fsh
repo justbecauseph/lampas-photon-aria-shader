@@ -101,6 +101,8 @@ void main() {
 #else
     fragment_color.xy = vec2(1.0);
 #endif
+#else
+    fragment_color.xy = vec2(1.0);
 #endif
 
     // Cumulus coverage map
