@@ -1,5 +1,58 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase U1 — Upstream Photon Fixes and Iris 1.11.4 Alignment (Completed)
+
+### Context
+
+- Fork baseline is upstream `v1.3-maintenance` tip `90451cc`; that branch has no later commits. Upstream `main` diverged at `7a3ce71` and carries 46 newer commits through `5c79f54` (2026-10-17), including a full formatter pass, so fixes are ported by hand.
+- The pack runs Iris 1.11.4+mc26.2, Sodium 0.9.2+mc26.2 and Voxy 0.2.19-beta. Earlier phases were validated on Iris 1.11.2 and Sodium 0.9.1. The deployed `lampas-photon-aria.zip` matches `d6899b2`; PERF1 through PERF4 have not shipped.
+- Iris 1.11.4 keeps the hardware depth buffer reverse-Z during shader packs and rewrites pack GLSL (`DepthTransformer`) so depth-sampler reads, `gl_FragCoord.z` and `gl_FragDepth` stay forward-Z. Voxy 0.2.19 still forces forward-Z, which draws LOD terrain into the sky (sixthsurge/photon#672, MCRcortex/voxy#700). lampas2-overrides 1.0.6 backports Voxy's 263-branch handling and converts `vxProj`/`vxViewProj` (and the derived inverse/previous uniforms) to forward-Z, so the shader's forward-Z contract is unchanged and no depth-direction change is needed here.
+- Reassessment: PERF1, PERF2 and PERF4 are shader-only logic. PERF3's linear-filter assumption still holds in Iris 1.11.4 (`RenderTarget` uses LINEAR for non-integer formats). Sodium 0.9.1 to 0.9.2 changes allocators and buffers, not the shader interface. Iris 1.11.4 removed shadow section-list caching, which raises shadow-pass CPU cost without needing a shader change.
+
+### Scope
+
+Port these upstream `main` fixes, adapted to this fork's merged Voxy depth (`excludeLodsFromVanillaDepth: false`):
+
+1. `77d677f` (#639): add `lod_depth_tex_shading` (DH: `lod_depth_tex`; Voxy: `lod_depth_tex_solid`) and use it for LOD SSRT and the LOD checks in `d1_clouds`, `d2_clouds_upscaling`, `d3_ao` and `d4_deferred_shading`, so distant Voxy glass does not act as an opaque surface.
+2. `1fac270` (#609), adapted: remove the `c1_blend_layers` workaround that cleared `colortex13`, and discard non-water Voxy translucent fragments in `voxy_translucent` only where vanilla depth is clearly closer (`z_vanilla < z_fragment - max(0.25 * z_fragment, 4.0)`). Upstream's plain `depthtex1 < 1.0` test is not used because merged depth puts Voxy's own surfaces in `depthtex1`.
+3. `3e0f3e3` (#669), shader part: colored light shafts require `SHADOW_COLOR`. The other parts of that commit target code this fork does not have.
+4. `789c493`: water brightness control scales with `max(blocklight, skylight)` so water is not lit without light.
+5. `949384e`: sky reflections from screen-space misses always use the skylight falloff.
+6. `9de6a36`: water caustics fade with `rainStrength`.
+7. `139e224`: apply the texture matrix to solid-geometry UVs (animated charged-creeper overlay).
+8. `2fde442`: render the selection box on translucent blocks regardless of `USE_SEPARATE_ENTITY_DRAWS`.
+9. `c9f9ee4` and `2030aa8`: use Iris's `alphaTestRef` (default 0.1) for solid-geometry cutout and stop forcing `alphaTest.* = off`, fixing opaque mipmapped cutouts.
+
+Out of scope: 26.3-only commits (`9e1a441`, `57d4678`), the `1.21.11` gating change (`0f4df7e`, no effect on 26.2), `0f` literals (`82fe60e`, none present here), formatting commits, and features (Photonics, Colorwheel, progressive bloom upsampling, atmosphere saturation, vanilla AO intensity, vertical fog cutoff, subgroup SH).
+
+### Acceptance Criteria
+
+- Each ported fix matches upstream behavior, apart from the documented merged-depth adaptation in item 2.
+- With merged Voxy depth, distant Voxy water and glass remain visible over Voxy terrain, enchanted and translucent vanilla items in front of Voxy terrain are no longer erased, and Voxy glass and ice are discarded behind clearly closer vanilla geometry (one frame late; see below).
+- Aria wrappers and mirrored properties remain valid; the PERF1 validator and `git diff --check` pass.
+- Changed fragment and vertex programs compile in the standalone glslang contexts used by earlier phases, for Voxy and no-LOD variants where applicable.
+- Runtime behavior under Iris 1.11.4 with lampas2-overrides 1.0.6 is recorded as unverified unless tested in game.
+
+### Implementation, Review, and Validation
+
+- The `editor` subagent applied the ports. Parent review checked each against the upstream commit.
+- Root cause of see-through enchanted items in front of Voxy terrain: 26.2 renders glinted items through Iris's `ITEM_TRANSLUCENT` pipeline into `colortex13`, and they also land in `depthtex1`. The removed `c1_blend_layers` block zeroed `colortex13` wherever Voxy depth lay behind a pixel with `front_depth == back_depth`, which erased the item and its glint and exposed the LOD-shaded pixel underneath.
+- Independent review found that the first discard (`!is_voxy_surface(depthtex1, gl_FragCoord.z)`) dropped Voxy water in about half of frames. Voxy draws during Sodium's cutout pass, before Iris refreshes `depthtex1`, so the shader read the previous frame's merged depth, which includes Voxy's own water surface. Under TAA jitter the current fragment was frequently farther than that surface. In game the distant ocean then showed only the seafloor. Water is now never discarded, because it writes no colour to `colortex13` and `c1_blend_layers` resolves its ownership from current-frame depth. Glass and ice use the wide-margin test above.
+- Known limitation: the Voxy glass/ice discard uses the previous frame's depth, so moving entities can show one-frame edges. Upstream has the same lag.
+- `alphaTestRef` now follows each program's Iris default rather than a fixed 0.1. Iris injects no alpha test for this pack's `layout` outputs (`CommonTransformer` only patches `gl_FragData`). Cutout terrain now uses 0.5 (`HALF_ALPHA`, the intended mipmap fix), `ENTITIES_SOLID` uses 0, and entity cutout, block entities, particles and hand stay at 0.1. `shadow.fsh` keeps 0.1, as upstream does.
+- In merged-depth Voxy builds, the `lod_depth_tex_shading` edits in `d1`–`d4` change nothing (`is_lod_terrain` needs `depthtex1 >= 1.0`). The active change is `SSRT_LOD` in `c1`: distant-water reflections now march `vxDepthTexOpaque` and no longer hit their own surface.
+- `tools/validate_perf1.py` gained a `LATER_PHASE_EDITS` table. It rewrites the baseline only for the single `raymarched.glsl` guard, before the parity comparison.
+- Standalone glslang 16.6.0 compiles (GLSL 460 compatibility copies with Iris macros; not an Iris or driver test) passed 34/34:
+  - `composite1` and `deferred1`–`deferred4` in no-LOD, Voxy and DH variants, plus Aria `composite1` with Voxy.
+  - `gbuffers_water`, `gbuffers_entities_translucent`, solid terrain/entities/hand/block (fragment and vertex), `gbuffers_basic`, `gbuffers_line`, and `shadow` with and without caustics.
+  - `composite` with colored light shafts, both with and without `SHADOW_COLOR`.
+  - Both Voxy patches, using a mock Voxy header.
+  - Unchanged HEAD fails the colored-light-shafts-without-`SHADOW_COLOR` case, reproducing upstream #669.
+- PERF1 validator (37 checks), wrapper validation (118 files, 23 properties) and `git diff --check` pass.
+- In game, with lampas2-overrides 1.0.6 on the live pack: the sky no longer shows terrain textures, and the enchanted sword in front of Voxy terrain renders solid. With the final build (`u1-test3`), distant Voxy ocean renders as water again.
+- Open, outside U1: an elytra seen from the front was reported as see-through. Vanilla 26.2 draws elytra with `armorCutoutNoCull` (an opaque cutout path), but the player model is a Figura avatar (F3 shows Figura render instructions), so its parts may use Figura's own translucent render types. Not reproduced or diagnosed.
+- Not verified: Voxy glass/ice behind moving entities, Distant Horizons in game, and GPU timing.
+
 ## Phase PERF4 — Optional Distant Water Detail (Completed)
 
 ### Scope and Acceptance Criteria

@@ -211,6 +211,23 @@ void voxy_emitFragment(VoxyFragmentParameters parameters) {
         gbuffer_data = vec4(0.0);
     }
 
+    // Discard where vanilla geometry is clearly closer, so Voxy glass and ice
+    // do not paint over vanilla entities in colortex13. Voxy draws before
+    // Iris refreshes depthtex1, so this reads the previous frame's merged
+    // depth, which includes Voxy's own surfaces; the wide margin keeps a
+    // fragment from being discarded against its own jittered depth. Water
+    // writes no colour here; c1_blend_layers resolves its ownership instead.
+    float depth_vanilla = texelFetch(depthtex1, ivec2(gl_FragCoord.xy), 0).x;
+    if (depth_vanilla < 1.0) {
+        float z_vanilla =
+            screen_to_view_space_depth(gbufferProjectionInverse, depth_vanilla);
+        float z_fragment =
+            screen_to_view_space_depth(vxProjInv, gl_FragCoord.z);
+        if (z_vanilla < z_fragment - max(0.25 * z_fragment, 4.0)) {
+            discard;
+        }
+    }
+
     // Early exit if albedo is zero
 
     if (max_of(material.albedo * alpha) < eps) {

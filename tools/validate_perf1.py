@@ -3,7 +3,8 @@
 This validator does not compile GLSL or execute a GPU shader.  It compares the
 working shaders with a pre-PERF1 Git revision after evaluating only the
 WORLD_ARIA conditional groups as disabled, then checks the small numerical
-contracts that make the early exits safe.
+contracts that make the early exits safe. Intentional non-Aria edits from
+later phases are applied to the baseline first (LATER_PHASE_EDITS).
 """
 
 from __future__ import annotations
@@ -22,6 +23,28 @@ EDITED_SHADERS = (
     Path("shaders/include/sky/clouds/cumulus.glsl"),
     Path("shaders/include/sky/clouds/altocumulus.glsl"),
 )
+
+# Intentional non-Aria edits made after PERF1, applied to the baseline text
+# before the parity comparison so later phases do not mask PERF1 regressions.
+LATER_PHASE_EDITS = {
+    # U1: upstream 3e0f3e3 requires SHADOW_COLOR for colored light shafts.
+    Path("shaders/include/fog/overworld/raymarched.glsl"): (
+        (
+            "#ifdef AIR_FOG_COLORED_LIGHT_SHAFTS\n        float depth0",
+            "#if defined AIR_FOG_COLORED_LIGHT_SHAFTS && defined SHADOW_COLOR\n"
+            "        float depth0",
+        ),
+    ),
+}
+
+
+def apply_later_phase_edits(path: Path, text: str) -> str:
+    text = output_text(text.splitlines(keepends=True))
+    for old, new in LATER_PHASE_EDITS.get(path, ()):
+        if text.count(old) != 1:
+            raise AssertionError(f"{path}: later-phase edit anchor not found exactly once")
+        text = text.replace(old, new)
+    return text
 
 
 def git_text(revision: str, path: Path) -> str:
@@ -187,7 +210,7 @@ def run(baseline: str) -> int:
 
     for path in EDITED_SHADERS:
         current = (ROOT / path).read_text(encoding="utf-8")
-        before = git_text(baseline, path)
+        before = apply_later_phase_edits(path, git_text(baseline, path))
         check(f"{path}: WORLD_ARIA-disabled source differs from baseline", comparable(without_aria(current)) == comparable(before))
         check(f"{path}: current source contains a WORLD_ARIA guard", "WORLD_ARIA" in current)
 
