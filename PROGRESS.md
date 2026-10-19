@@ -1,5 +1,51 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase LS1 — Lowest Preset for Integrated and GTX 1050-Class GPUs (Scoped)
+
+### Context
+
+- Target: Intel Iris Xe, Radeon 680M and GTX 1050–1650 class GPUs at 1080p. Owner decisions (2026-10-19): add a new lowest preset that may disable sun shadows; keep High as the default profile; leave existing presets unchanged.
+- Current `profile.low` turns off SSR, AO, VL, colored lights, caustics and SSRT, but it keeps:
+  - shadow distance at 128 blocks;
+  - all five cloud layers, with cumulus at 40/20 primary steps and 6 lighting steps;
+  - crepuscular rays (20/4 steps), bloom (9 passes), cloud shadows, water parallax and full water detail.
+  - It also does not use TAAU.
+- VL already runs at half resolution and clouds at quarter resolution with temporal upscaling, so presets are the main lever.
+- Iris 1.11.4 removed shadow section-list caching, so the shadow pass now costs more CPU time. Disabling `SHADOW` removes the pass entirely.
+- The U2 subgroup SH change is not a meaningful frame-rate gain.
+
+### Scope
+
+1. Add `profile.lowest`, built on `profile.low`, with:
+   - `!SHADOW`;
+   - `TAAU` with `TAAU_RENDER_SCALE=0.67`;
+   - cumulus primary steps cut to about half and lighting steps to 3;
+   - cumulus congestus, noctilucent and cirrus layers off;
+   - fewer crepuscular-ray steps, or rays off;
+   - `!CLOUD_SHADOWS`;
+   - `WATER_WAVE_ITERATIONS=2` and `WATER_DETAIL_DISTANCE=64`.
+   Bloom, sky reflections, SH skylight and CAS stay on unless measurement shows they matter on the target class. Final values follow the measurements below.
+2. Add the `profile.lowest` English name to `lang/en_US.lang`. Iris lists profiles automatically in the `<profile>` slot.
+3. Add `tools/validate_profiles.py`. For every profile it checks that:
+   - each token names an option defined in `settings.glsl` or `shaders.properties`;
+   - each `=value` is in that option's allowed list;
+   - `profile.X` includes resolve.
+   This catches the stale-`GTAO` class of bug that the shipped zip still logs.
+4. Fix any `!SHADOW` breakage found in Overworld, Aria, Nether, End, or with Voxy. This covers shader paths that assume shadow samplers or `shadowcolor` exist.
+
+### Measurement Protocol (user, in game)
+
+- Use fixed scenes with the same seed position, camera and `/time set noon`, and clear weather: an Overworld vista over Voxy terrain, dense forest, distant ocean, the Aria under-island horizon, and a cave.
+- Record F3 average FPS and p98 frame time for lowest, low, medium and high after 10 s of settling.
+- If possible, also measure on an integrated-GPU or GTX 1050-class machine. Otherwise, record that the numbers come from an RTX 5080 and show relative cost only.
+
+### Acceptance Criteria
+
+- Iris loads every profile with no `Invalid pack option` warning and no new unresolved menu-element warning in `latest.log`, and `tools/validate_profiles.py` passes.
+- With `!SHADOW`, programs compile and render without black or broken lighting in all listed scenes. Voxy terrain and distant water render, and the Aria under-island horizon stays bright.
+- In every test scene, lowest has a lower frame time than low. All numbers are recorded here with the hardware used; no speedup is claimed beyond the measured values.
+- Existing low/medium/high/ultra profiles and the High default are byte-identical. PERF1 and wrapper validators and `git diff --check` pass.
+
 ## Phase U2 — Subgroup Sky SH Reduction (Completed)
 
 ### Scope
