@@ -1,5 +1,33 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase U2 — Subgroup Sky SH Reduction (Completed)
+
+### Scope
+
+- Port upstream `a715d94` (#682), the only performance change on upstream `main` that this fork lacks.
+  - Reduce the 256 sky SH samples with `subgroupAdd` when Iris reports `MC_GL_KHR_shader_subgroup_arithmetic`. Keep the shared-memory tree reduction otherwise.
+  - Make the struct/`mat3` SH implementation (previously the Intel fallback) the only implementation, and delete `spherical_harmonics_fallback.glsl`.
+  - Pass the sky SH to `deferred4` as three `flat mat3` varyings instead of `vec3[9]`.
+  - Pack the aurora and rainbow varyings into one `mat2x4` (upstream's macOS varying-limit fix).
+- Harden the subgroup path beyond upstream:
+  - The final `imageStore` runs on the invocation that wrote the reduced sums. Upstream relies on local invocation 0 being lane 0 of subgroup 0.
+  - Size shared memory for up to 64 subgroups, so subgroups as small as 4 lanes still fit. Upstream's 32 assumes at least 8 lanes.
+- This saves a fraction of a millisecond per frame, once per frame. It is not a low-spec frame-rate fix on its own.
+
+### Acceptance Criteria
+
+- SH coefficients and up-facing irradiance are unchanged up to floating-point summation order on both paths. Storage locations `colortex4` (191, 2..11) are unchanged.
+- `deferred4`, `deferred` (sky map) and the SH compute program compile standalone in Overworld and Aria variants, with and without the subgroup macro, and with `SH_SKYLIGHT` off.
+- Validators and `git diff --check` pass. In-game sky lighting must be checked by the user. No GPU timing claim is made.
+
+### Implementation and Validation
+
+- `spherical_harmonics.glsl`, `d0_sky_map.fsh/.vsh`, `d4_deferred_shading.vsh` and `d4a_generate_sky_sh.csh` were taken from upstream `a715d94`. Each matched upstream's pre-#682 file apart from formatting (checked with whitespace-insensitive diffs), so they carry only the #682 change. `d4_deferred_shading.fsh` and `diffuse_lighting.glsl` received the #682 hunks by hand.
+- Old and new SH math are equivalent: `mat3(9 floats)` is column-major, so `coeff[band / 3][band % 3]` keeps band order, and the per-band convolution weights (x, y, y, y, z, z, z, z, z) are unchanged. The struct path was already the Intel path.
+- Standalone glslang 16.6.0 passed 44/44: `deferred` and `deferred4` (fragment and vertex) plus the SH compute shader, in Overworld, Aria, Nether and End variants, with and without `MC_GL_KHR_shader_subgroup_arithmetic`, and with `SH_SKYLIGHT` off. The U1 set still passes 34/34.
+- PERF1 validator (37 checks), wrapper validation (118 files, 23 properties) and `git diff --check` pass.
+- In game (user, `u2-test`): sky and ambient lighting look unchanged. Which reduction path the user's driver took was not recorded, and no GPU timing was taken.
+
 ## Phase U1 — Upstream Photon Fixes and Iris 1.11.4 Alignment (Completed)
 
 ### Context
