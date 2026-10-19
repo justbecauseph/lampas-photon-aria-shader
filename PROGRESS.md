@@ -25,6 +25,8 @@
 - glslang compiled the Overworld and Aria SH pass for NVIDIA/Windows, Intel/Windows and Intel/Linux with subgroup support, plus Intel/Windows without it. Preprocessed output uses `subgroupAdd` exactly for NVIDIA and Intel/Linux. The U2 SH set passes 44/44.
 - Wrapper validation (118 files, 23 properties), profile validation (5 profiles), PERF1 (37 checks) and `git diff --check` pass.
 - Not verified on Intel hardware. Pack 2.3.65 still ships the broken path to Intel + Windows players until a new shader release and pack publish.
+- Released as `v1.1.1` (tag at `ee3b7fa`). The tag-triggered `Release Package` workflow (run 39314474632) succeeded and published https://github.com/justbecauseph/lampas-photon-aria-shader/releases/tag/v1.1.1. The asset sha256 is `00ba2959…bfbc9`, and its contents match the tag tree apart from line endings.
+- Staged in lampas-pipeline as pack 2.3.69, which another session had already prepared; 2.3.68 is the published version on all channels. The lock change is limited to the shader entry. Manifests were regenerated, and `validate`, `typecheck`, `bun test` (445 pass, 1 skip, 0 fail) and `git diff --check` passed. Per the owner, it is not published to the Portal.
 
 ## Release v1.1.0 (2026-10-19)
 
