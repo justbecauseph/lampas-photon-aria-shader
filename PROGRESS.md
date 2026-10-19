@@ -71,6 +71,13 @@
   - no `Invalid pack option` or new unresolved-menu warning in `latest.log`;
   - `!SHADOW` scenes render correctly (Overworld, Aria under-island, cave, Nether, End, Voxy terrain and water).
 - No speedup is claimed. The measurement protocol above remains the way to verify it and to tune the values.
+- In-game check (user, 2026-10-19, `ls1-test`, Overworld, RTX 5080):
+  - Iris reports `Profile: lowest (+0 options changed by user)`.
+  - `latest.log` shows no `Invalid pack option` and no compile error. The only menu warnings are the 5 known upstream gaps.
+  - F3 shows `Shadows: C: 0/6168`, so the shadow pass draws nothing.
+  - The frame rate sat at the 120 FPS VSync cap (p98 93 FPS) with the F3 profiler open, so the speedup is still unmeasured.
+  - Lighting looks flat without sun shadows or AO, and TAAU at 0.67 softens the image, as expected for this preset.
+  - Aria, caves, Nether, End and Voxy water were not checked under Lowest.
 
 ## Phase U2 — Subgroup Sky SH Reduction (Completed)
 
