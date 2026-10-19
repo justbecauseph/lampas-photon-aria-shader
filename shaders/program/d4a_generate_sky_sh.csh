@@ -9,7 +9,10 @@
 --------------------------------------------------------------------------------
 */
 
-#ifdef MC_GL_KHR_shader_subgroup_arithmetic
+// Use subgroup arithmetic when available, except on Intel + Windows + OpenGL,
+// where it breaks the sky SH (upstream #686)
+#if defined MC_GL_KHR_shader_subgroup_arithmetic     && (defined IRIS_VULKAN || !defined MC_GL_VENDOR_INTEL         || !defined MC_OS_WINDOWS)
+#define SKY_SH_SUBGROUP
 #extension GL_KHR_shader_subgroup_arithmetic : enable
 #endif
 
@@ -23,7 +26,7 @@ layout(rgba16f) writeonly uniform image2D colorimg4;
 
 uniform sampler2D colortex4;
 
-#ifdef MC_GL_KHR_shader_subgroup_arithmetic
+#ifdef SKY_SH_SUBGROUP
 // One slot per subgroup: 64 covers subgroups down to 4 lanes for the 256
 // invocations in this workgroup (upstream's 32 assumes at least 8 lanes).
 shared vec3 shared_memory[64][9];
@@ -93,7 +96,7 @@ void main() {
 
     mat3 coeff = sh_coeff_order_2(direction);
 
-#ifdef MC_GL_KHR_shader_subgroup_arithmetic
+#ifdef SKY_SH_SUBGROUP
     for (uint band = 0u; band < 9u; ++band) {
         float c = coeff[band / 3u][band % 3u];
 
@@ -169,7 +172,7 @@ void main() {
 
     // Save SH coeff in colorimg4
 
-#ifdef MC_GL_KHR_shader_subgroup_arithmetic
+#ifdef SKY_SH_SUBGROUP
     // The lane that wrote the reduced sums stores them, so no cross-lane
     // shared-memory visibility is needed
     bool is_writer = gl_SubgroupInvocationID == 0u;

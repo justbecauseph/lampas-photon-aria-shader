@@ -1,5 +1,31 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase U3 — Photon 1.4 Audit and Intel Windows Sky SH Fix (Completed)
+
+### Scope and Acceptance Criteria
+
+- Determine whether this fork has every Photon v1.4 update (Modrinth version `BnGklH5y`, released 2026-10-19), and port any missing fixes.
+- Acceptance:
+  - The fix matches upstream semantics.
+  - The sky SH compute pass selects the subgroup path exactly where upstream does.
+  - All SH programs compile.
+  - Validators and `git diff --check` pass.
+
+### Findings
+
+- `photon_v1.4.zip` (sha1 `96c7730f…`) matches upstream `3d725de` file for file. That is `5c79f54`, the commit U1 audited, plus a Spanish (Mexico) translation update. Every v1.4 bug fix is therefore already ported or deliberately skipped (U1).
+- v1.4 features that remain out of scope: Photonics, Colorwheel, the atmosphere-saturation, blocky-cloud, vanilla-AO and colored-light lightmap settings, the border-fog vertical cutoff, SimplyLights blocks, progressive bloom upsampling, Korean and other translation updates, and MC 26.3 fixes.
+- Post-1.4 upstream `e4013c3` (#686) reports that the subgroup sky SH path from #682 (ported in U2 and shipped in pack 2.3.65) completely breaks sky SH on Intel + Windows + OpenGL. That combination is the LS1 low-spec target.
+
+### Implementation and Validation
+
+- Ported `e4013c3`:
+  - `d4a_generate_sky_sh.csh` defines `SKY_SH_SUBGROUP` only when subgroup arithmetic is available and the platform is not Intel + Windows + OpenGL. All four subgroup branches use it, including U2's writer-lane guard.
+  - The copy-AO Intel workaround (`composite17` in all four dimensions) is gated on `!IRIS_VULKAN && MC_GL_VENDOR_INTEL && MC_OS_WINDOWS` instead of `MC_GL_RENDERER_INTEL`, matching upstream.
+- glslang compiled the Overworld and Aria SH pass for NVIDIA/Windows, Intel/Windows and Intel/Linux with subgroup support, plus Intel/Windows without it. Preprocessed output uses `subgroupAdd` exactly for NVIDIA and Intel/Linux. The U2 SH set passes 44/44.
+- Wrapper validation (118 files, 23 properties), profile validation (5 profiles), PERF1 (37 checks) and `git diff --check` pass.
+- Not verified on Intel hardware. Pack 2.3.65 still ships the broken path to Intel + Windows players until a new shader release and pack publish.
+
 ## Release v1.1.0 (2026-10-19)
 
 - Tag `v1.1.0` is at `c1eeb25`. It includes the B3 Voxy merged-depth work, PERF1–PERF4, U1, U2 and LS1.
