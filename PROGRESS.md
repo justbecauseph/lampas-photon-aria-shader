@@ -1,5 +1,14 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Release v1.1.0 (2026-10-19)
+
+- Tag `v1.1.0` is at `c1eeb25`. It includes the B3 Voxy merged-depth work, PERF1–PERF4, U1, U2 and LS1.
+- Release: https://github.com/justbecauseph/lampas-photon-aria-shader/releases/tag/v1.1.0
+- The tag-triggered `Release Package` workflow (run 39237013524) failed at `actions/upload-artifact`: the account's Actions artifact storage quota was full. Its release step never ran.
+- The release was published with `gh release create --verify-tag`, using `git archive v1.1.0 shaders LICENSE`. Both assets (`lampas-photon-aria-v1.1.0.zip` and `lampas-photon-aria.zip`) have the same digest, sha256 `563cf675…feefcf`.
+- Validators run before tagging: wrapper, profile and PERF1.
+- The Lampas pack (`lampas-pipeline`) has not been updated and still ships the `d6899b2` build.
+
 ## Phase LS1 — Lowest Preset for Integrated and GTX 1050-Class GPUs (Completed; FPS unverified)
 
 ### Context
