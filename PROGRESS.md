@@ -83,6 +83,11 @@
   - Fix: Low, Medium, High and Ultra now set those 14 options to their `settings.glsl` defaults. Lowest still inherits Low and overrides them, since later tokens replace included ones (`Profile.Builder`).
   - This reverses the earlier "existing profiles byte-identical" criterion: profile values are unchanged, but each existing line now lists the 14 defaults explicitly.
   - `tools/validate_profiles.py` now fails when any option set by one profile is missing from another. It reports the pre-fix lines as failures.
+- Fix verified in game with `ls1-test2`: after selecting High, Iris shows `Profile: high (+0 options changed by user)` and `Shadows: C: 309/6168`.
+- Unpaired readings so far (RTX 5080, 3840×2054, VSync off, F3 profiler open, different spots and facings), so they cannot be compared:
+  - Lowest (old `ls1-test`, forest edge at -1178 65 311): 98 FPS, p50 108, p98 95.
+  - High (`ls1-test2`, dense forest at -1157 64 299): 140 FPS, p50 150, p98 58.
+  - Lowest averaging below High suggests this machine is CPU- or scene-bound rather than shader-bound.
 
 ## Phase U2 — Subgroup Sky SH Reduction (Completed)
 
