@@ -12,6 +12,8 @@
 - `profile.low` and `profile.medium` already set `!ENTITY_SHADOWS` from upstream. `profile.high` changed from `ENTITY_SHADOWS` to `!ENTITY_SHADOWS`. Without the define, `shaders.properties` sets `shadowEntities = false`.
 - `shadowPlayer = true` is unchanged, so Iris still renders the player's own shadow (and any vehicle the player rides) in these profiles.
 - Profile validation (5 profiles), wrapper validation (118 files, 23 properties), PERF1 (37 checks) and `git diff --check` pass. Not checked in game.
+- Released as `v1.1.2` (tag at `b0154fc`). The tag-triggered `Release Package` workflow (run 41673001053) succeeded and published https://github.com/justbecauseph/lampas-photon-aria-shader/releases/tag/v1.1.2. The asset sha256 is `cab951dc…e138a1`, and its contents match the tag tree apart from line endings.
+- Staged in lampas-pipeline pack 2.5.21; 2.5.20 is the published version on all channels. This adds only the shader lock entry to 2.5.21, which another session had already staged with 11 other mod updates. Manifests were regenerated and `lampasctl validate` passed. Per the owner, it is not published to the Portal.
 
 ## Phase U3 — Photon 1.4 Audit and Intel Windows Sky SH Fix (Completed)
 
