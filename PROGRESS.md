@@ -1,5 +1,18 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase ES1 — Disable Entity Shadows in Low, Medium and High (Completed)
+
+### Scope and Acceptance Criteria
+
+- Entity shadows are off in `profile.low`, `profile.medium` and `profile.high` (and `profile.lowest`, which includes `profile.low`). `profile.ultra` is unchanged.
+- Acceptance: each of those profiles resolves `ENTITY_SHADOWS` to false, and the profile and wrapper validators pass.
+
+### Implementation and Validation
+
+- `profile.low` and `profile.medium` already set `!ENTITY_SHADOWS` from upstream. `profile.high` changed from `ENTITY_SHADOWS` to `!ENTITY_SHADOWS`. Without the define, `shaders.properties` sets `shadowEntities = false`.
+- `shadowPlayer = true` is unchanged, so Iris still renders the player's own shadow (and any vehicle the player rides) in these profiles.
+- Profile validation (5 profiles), wrapper validation (118 files, 23 properties), PERF1 (37 checks) and `git diff --check` pass. Not checked in game.
+
 ## Phase U3 — Photon 1.4 Audit and Intel Windows Sky SH Fix (Completed)
 
 ### Scope and Acceptance Criteria
