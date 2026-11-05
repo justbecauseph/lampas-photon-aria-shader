@@ -1,5 +1,32 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Tooling — glslang Compile Validator (Completed)
+
+### Scope and Acceptance Criteria
+
+- Owner request (2026-11-05): add GLSL compilation and validation to the repository tools, replacing the throwaway harnesses used in earlier phases.
+- **Acceptance:**
+  - One command compiles every program across dimensions, option sets and LOD variants, and skips programs the option set disables.
+  - It reports failures, and can instead report only regressions against a git revision.
+  - It passes on the current tree and detects an injected error.
+  - README and `PLAN.md` describe it.
+
+### Implementation and Validation
+
+- **New `tools/validate_compile.py`:**
+  - **Options:** it applies profile or option-set values to `settings.glsl`.
+  - **Program toggles:** it preprocesses `shaders.properties`, including its `#if` blocks, with the active macros, and evaluates each `program.<world>/<name>.enabled` expression. `shadow_*` programs follow the `shadow` toggle.
+  - **Compilation:** it expands includes and replaces `#version` with `460 compatibility` plus the Iris macros. It compiles with glslang, in parallel, deduplicating identical sources.
+  - **Iris macros:** these follow Iris `StandardMacros` (Iris `26.2` at `4ce5bb6dd`): `MC_VERSION` 260200 (Iris's formatting of 26.2), `DH_BLOCK_*`, render stages, `IRIS_TAG_SUPPORT`, `MC_NORMAL_MAP` and the others.
+  - **Variants:** a Voxy variant is added when a program references `VOXY`, and a DH variant for `dh_*` programs (or any program, with `--variants voxy,dh`). DH vertex shaders get the `int dhMaterialId` global that Iris's DH transformers inject.
+  - **Flags:** `--extended` adds 11 feature combinations that no profile selects. `--baseline REV` compiles a `git archive` of REV and fails only on regressions. Further options: `--programs`, `--worlds`, `--profiles`, `--set`, `--define`, `--vendor`, `--extensions` and `--keep`.
+- **Results with glslang 16.6.0:**
+  - Default run (defaults plus all 5 profiles): 4,616 program variants compiled with 0 failures in about 65 s. 320 variants disabled by toggles were skipped.
+  - `--extended --profiles default --variants voxy,dh`: 13,836 variants, 0 failures. This includes `composite2` with DOF on.
+  - `--baseline 314cbaa` on `composite1`, `deferred4` and the shadow fragment programs: 0 regressions.
+  - An undeclared identifier injected into `stars.glsl` was reported as a regression against HEAD for every `deferred4` variant, with exit code 1. The file was restored afterwards.
+- **Limits:** this is not an Iris transformer, link or driver test, and the Voxy patch files are not compiled. The release workflow is unchanged.
+
 ## Phase FIX1 — Correctness Bugs Found During the Audit (Completed except item 8; in-game check pending)
 
 ### Scope and Acceptance Criteria

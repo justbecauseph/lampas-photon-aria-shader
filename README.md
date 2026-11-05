@@ -80,12 +80,30 @@ cmd /c mklink /J "$env:APPDATA\.minecraft\shaderpacks\lampas-photon-aria" "C:\pa
 
 ## Development & CI/CD
 
-### Structural Validation
+### Validation
 
-An automated validation script verifies wrapper parity, directive placement, include target resolution, and `shaders.properties` toggle symmetry:
+The validators in `tools/` need only Python 3.12+; the compile check also needs [glslang](https://github.com/KhronosGroup/glslang).
+
+| Command | Checks |
+|---|---|
+| `python tools/validate_wrappers.py` | Wrapper parity, directive placement, include targets, and `program.aria` toggle symmetry |
+| `python tools/validate_profiles.py` | Profile tokens, option values, profile includes, and menu entries in `shaders.properties` |
+| `python tools/validate_perf1.py` | PERF1 fast-path contracts and non-Aria source parity against the pre-PERF1 baseline (needs git history) |
+| `python tools/validate_compile.py` | Compiles every program with glslang |
+
+`validate_compile.py`:
+
+- **Matrix:** it compiles every program in `world0`, `aria`, `world-1` and `world1`, for the `settings.glsl` defaults and each profile, without LOD mods plus Voxy or Distant Horizons variants where a program supports them.
+- **Skips** programs the option set disables (`program.<world>/<name>.enabled`).
+- **Macros:** it injects Iris's standard macros for Minecraft 26.2.
+- **Finding glslang:** `--glslang`, the `GLSLANG` environment variable, `PATH`, or `~/.local/bin`.
+- **Limits:** this is a standalone GLSL check (sources are compiled as `460 compatibility`). It does not run Iris's shader transformer, link program stages, or test a GPU driver. The Voxy patch files are not compiled.
 
 ```bash
-python tools/validate_wrappers.py
+python tools/validate_compile.py                       # defaults and every profile (~1 min)
+python tools/validate_compile.py --extended            # plus feature combinations no profile selects
+python tools/validate_compile.py --baseline HEAD       # only report programs that compiled at HEAD
+python tools/validate_compile.py --programs "composite1.*" --profiles low --set BLOOMY_FOG --set '!VL'
 ```
 
 ### Packaging & Releases

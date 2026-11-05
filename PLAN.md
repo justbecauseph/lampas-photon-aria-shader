@@ -18,9 +18,7 @@ Validated on 2026-11-05 against the source, with standalone glslang compiles of 
   - `python tools/validate_perf1.py` (needs the PERF5 update described in the [validator update](#validator-update-for-validate_perf1py))
   - `python tools/validate_profiles.py`
   - `git diff --check`
-  - Standalone glslang compiles of every touched program. Use world0 and Aria variants, no-LOD and Voxy variants where they apply, and the default, `low` and `lowest` option sets, plus any option sets the phase names.
-    - **Compiler:** glslang 16.6.0 at `C:\Users\markj\.local\bin\glslang.exe`.
-    - **Harness:** the harness must expand `/`-rooted includes, apply option overrides to `settings.glsl`, inject the Iris `MC_*` macros, and raise the version to `460 compatibility`. The wrappers' `400` profile rejects the existing multi-line directives.
+  - `python tools/validate_compile.py --baseline HEAD` (add `--extended` for feature combinations no profile selects). It compiles every program in all four dimension folders, for the defaults and every profile, with Voxy and DH variants where they apply, using glslang (16.6.0 at `C:\Users\markj\.local\bin\glslang.exe`).
     - **Boundary:** this is a GLSL semantic check, not an Iris link or driver test.
 
 ## Measurement Protocol (all phases)
