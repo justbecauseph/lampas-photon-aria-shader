@@ -227,6 +227,42 @@ Every item below was confirmed against the source during validation.
 
 ---
 
+## Phase B3.6 — Voxy Surfaces Beyond the Vanilla Far Plane
+
+### Problem
+
+- **Symptom** (in game, 2026-11-05): from high altitude, distant Voxy water stops at a straight line and the seabed shows beyond it. Clouds and distance haze stop at the same line. Upstream Photon draws water and clouds out to the horizon at the same spot. The bug predates PERF5.
+- **Cause:**
+  - Minecraft 26.2's projection far plane is `Camera.depthFar = max(4 × render distance, 16 × cloud range)` blocks. That is 1,024 blocks at 16 chunks and cloud range 64.
+  - With `excludeLodsFromVanillaDepth: false`, Voxy reprojects its depth into vanilla depth with that projection. Its blit then clamps the result to just in front of the far plane (`REDUCTION2(FAR ± 2/(2²⁴−1), depth)`, Voxy `blit_texture_depth_cutout.frag`).
+  - So every Voxy surface beyond about 0.997 × far ends up with a merged depth stuck at the far plane.
+- **Effects:**
+  - `is_voxy_surface` (`c0`, `c1`) compares the true Voxy distance with that saturated value and rejects the surface, so `c1` skips distant water.
+  - Under Voxy, `is_lod_terrain` (`d1`–`d4`, `c2`, `c4`, `final`) requires `depthtex1 >= 1`, which merged depth never gives. Those passes treat the terrain as vanilla geometry about 1 km away: clouds are culled, and fog and shading positions are too close.
+
+### Scope
+
+- **New helper:** in `include/misc/lod_mod_support.glsl`, under `VOXY`, add `is_voxy_beyond_vanilla_far(depth_world, depth_voxy)`. It is true when Voxy has a surface (`depth_voxy < 1`) and the merged depth lies at or beyond 0.99 × the vanilla far plane. The far plane is read from `gbufferProjectionInverse` at depth 1.0, so it follows the player's render distance and cloud range.
+  - **Why it's safe:** vanilla geometry can't come near that distance (at most about half of `depthFar`), so anything there is Voxy terrain.
+- **Wire it in:**
+  - **`is_voxy_surface`** (`voxy_merged_depth.glsl`): such pixels are Voxy-owned.
+  - **`is_lod_terrain`, under `VOXY` only:** such pixels are LOD terrain, so `d1`–`d4`, `c2`, `c4` and `final` use Voxy depth and projection, as upstream does for every LOD pixel.
+- **Unchanged:**
+  - Pixels whose merged depth is below 0.99 × far, so the B3.5 ownership contract holds within the vanilla far plane.
+  - The DH and no-LOD paths.
+  - `voxy.json` keeps `excludeLodsFromVanillaDepth: false`, so Camerapture and distant-decoration occlusion are unaffected.
+
+### Acceptance Criteria
+
+- **Distant water:** in the screenshot scenes, Voxy water continues to the horizon with no straight-line cut-off, and clouds and distance haze continue past the old line, matching upstream Photon.
+- **No regressions:**
+  - Within the vanilla far plane, nothing changes: vanilla foreground still occludes Voxy, the shoreline seam stays fixed (B3.3.1), and the Camerapture and distant-decoration checks still pass.
+  - No visible seam at about 0.99 × far, where `d1`–`d4` switch to the LOD path.
+- **Validation:** wrappers, profiles, PERF1, `validate_compile.py --baseline HEAD` (with Voxy variants) and `git diff --check` pass.
+- **In-game check:** by the owner, at 16 chunks and at one other render distance.
+
+---
+
 ## Phase PERF6 — Optimizations That Change the Image Slightly (A/B Gated)
 
 ### Scope

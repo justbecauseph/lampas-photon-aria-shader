@@ -1,5 +1,38 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase B3.6 — Voxy Surfaces Beyond the Vanilla Far Plane (Implemented; in-game check pending)
+
+### Scope and Acceptance Criteria
+
+- Scope, cause and acceptance criteria are in `PLAN.md` under Phase B3.6.
+- In short: Voxy's merged depth saturates at Minecraft's projection far plane (`Camera.depthFar`, 1,024 blocks at 16 chunks). Beyond it, `is_voxy_surface` and `is_lod_terrain` treat Voxy terrain as vanilla geometry about 1 km away. That cuts off distant water, clouds and haze at a straight line.
+- **Sources:**
+  - Voxy `dev` at `534d58ec`: `IrisVoxyRenderPipeline.finish`, `AbstractRenderPipeline.transformBlitDepth`, `blit_texture_depth_cutout.frag`.
+  - Minecraft 26.2 `Camera.update` (`javap`): `depthFar = max(effectiveRenderDistance × 16 × 4, cloudRange × 16)`.
+  - The owner's A/B screenshots against upstream Photon.
+
+### Implementation
+
+- **`include/misc/lod_mod_support.glsl`, Voxy branch:**
+  - New `vanilla_view_depth()` converts a merged depth to view distance using `gbufferProjectionInverse`.
+  - New `is_voxy_beyond_vanilla_far(depth_world, depth_voxy)` is true when `depth_voxy < 1` and `vanilla_view_depth(depth_world) >= 0.99 × vanilla_view_depth(1.0)`. The second term is the projection's far plane.
+  - Under `VOXY` only, `is_lod_terrain()` now returns `depth_lod < 1 && (depth >= 1 || is_voxy_beyond_vanilla_far(...))`. This affects `d1`–`d4`, `c2`, `c4`, `final` and `gbuffers_all_translucent`. DH and no-LOD builds are unchanged.
+- **`include/misc/voxy_merged_depth.glsl`:** `is_voxy_surface()` returns true for those pixels before the distance comparison. That covers `c0` VL and `c1` water and backing-layer ownership.
+- **Threshold choice** (float32 model of Minecraft's forward projection: near 0.05, Voxy's clamp at `1 − 2/(2²⁴−1)`):
+  - For render distances of 2–32 chunks and cloud ranges of 8–128, the far plane is 128–2,048 blocks, and the clamped depth falls at 0.9961–0.9998 × far.
+  - Float depth resolution there is under 0.003 × far, so 0.99 catches every clamped pixel.
+  - Vanilla terrain reaches at most about 0.53 × far, except at a 2-chunk render distance with cloud range 8 (far plane 128 blocks). There, vanilla geometry in the last 1% before the far plane, with Voxy terrain behind it, would be counted as Voxy.
+
+### Validation
+
+- **`validate_compile.py --baseline HEAD`:** 4,616 variants across all profiles, 0 regressions.
+- **`--extended --profiles default --variants voxy,dh`** on `composite`, `composite1`, `composite2`, `composite4`, `deferred1`–`deferred4`, `final` and `gbuffers_water`: 1,308 variants, 0 regressions.
+- **Voxy patches:** `voxy_translucent.glsl` includes `lod_mod_support.glsl`. Voxy declares `gbufferProjectionInverse` from `voxy.json`, and the patch already used it. The patch files themselves are not compiled by the tool.
+- **Validators:** wrappers, PERF1 (37 checks), profiles and `git diff --check` pass.
+- **Not done:**
+  - The in-game A/B against upstream at the owner's screenshot positions, plus one other render distance.
+  - Checks that near and mid-distance Voxy water, the B3.3.1 shoreline, and Camerapture and distant-decoration occlusion are unchanged.
+
 ## Tooling — glslang Compile Validator (Completed)
 
 ### Scope and Acceptance Criteria

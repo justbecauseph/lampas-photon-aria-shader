@@ -119,6 +119,29 @@ mat4 combined_projection_matrix_inverse = mat4(
 #define lod_projection_matrix_inverse vxProjInv
 #define lod_previous_projection_matrix vxProjPrev
 #define lod_render_distance (vxRenderDistance * 16)
+
+// View-space distance of a vanilla (merged) depth value
+float vanilla_view_depth(float depth) {
+    vec2 zw = (depth * 2.0 - 1.0) * gbufferProjectionInverse[2].zw +
+        gbufferProjectionInverse[3].zw;
+    return -zw.x / zw.y;
+}
+
+// With excludeLodsFromVanillaDepth = false, Voxy reprojects its depth into
+// vanilla depth with Minecraft's projection, whose far plane is
+// max(4 * render distance, 16 * cloud range) blocks, and clamps it just in
+// front of that plane. Every Voxy surface beyond it therefore has the same
+// merged depth, so the merged depth can't be compared with the Voxy depth
+// there. Vanilla geometry never reaches that far, so a Voxy surface whose
+// merged depth lies near the far plane belongs to Voxy.
+bool is_voxy_beyond_vanilla_far(float depth_world, float depth_voxy) {
+    // The clamped depth lies at 0.996-0.9998 * far for far planes of
+    // 128-2048 blocks; float depth resolution there is under 0.003 * far
+    const float far_fraction = 0.99;
+
+    return depth_voxy < 1.0 &&
+        vanilla_view_depth(depth_world) >= far_fraction * vanilla_view_depth(1.0);
+}
 #else
 #define combined_near near
 #define combined_far far
@@ -130,7 +153,14 @@ mat4 combined_projection_matrix_inverse = mat4(
 #endif
 
 bool is_lod_terrain(float depth, float depth_lod) {
+#if defined VOXY
+    // Merged depth is never 1.0 under Voxy surfaces; beyond the vanilla far
+    // plane it saturates instead (see is_voxy_beyond_vanilla_far)
+    return depth_lod < 1.0 &&
+        (depth >= 1.0 || is_voxy_beyond_vanilla_far(depth, depth_lod));
+#else
     return depth >= 1.0 && depth_lod < 1.0;
+#endif
 }
 
 #endif // INCLUDE_MISC_LOD_MOD_SUPPORT

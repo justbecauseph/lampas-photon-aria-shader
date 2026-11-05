@@ -16,6 +16,12 @@ bool is_voxy_surface(float depth_world, float depth_voxy) {
         return true;
     }
 
+    // Merged depth saturates at the vanilla far plane, so it can't rank a
+    // Voxy surface that lies beyond it
+    if (is_voxy_beyond_vanilla_far(depth_world, depth_voxy)) {
+        return true;
+    }
+
     float z_world = screen_to_view_space_depth(
         gbufferProjectionInverse,
         depth_world
