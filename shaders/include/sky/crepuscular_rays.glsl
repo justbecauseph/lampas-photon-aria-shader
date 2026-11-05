@@ -29,6 +29,11 @@ vec4 draw_crepuscular_rays(
 
     const float underground_light_fade_distance = 100.0;
 
+    // Scattering is scaled by the amount below, so nothing is visible at zero
+    if (clouds_params.crepuscular_rays_amount == 0.0) {
+        return vec4(vec3(0.0), 1.0);
+    }
+
     uint step_count = uint(
         mix(step_count_horizon,
             step_count_zenith,

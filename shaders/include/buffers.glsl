@@ -47,3 +47,10 @@ const bool colortex16Clear = true;
 const vec4 colortex16ClearColor = vec4(0.0, 0.0, 0.0, 0.0);
 #endif
 */
+
+// Iris does not evaluate preprocessor conditionals inside the comment above,
+// so conditional buffer directives must be real code.
+#ifndef SHADOW_COLOR
+// shadowcolor0 is only read with SHADOW_COLOR, so skip its per-frame clear
+const bool shadowcolor0Clear = false;
+#endif

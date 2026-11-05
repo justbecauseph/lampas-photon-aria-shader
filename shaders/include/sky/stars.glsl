@@ -10,6 +10,9 @@ vec3 unstable_star_field(vec2 coord, float star_threshold) {
     vec4 noise = hash4(coord);
 
     float star = linear_step(star_threshold, 1.0, noise.x);
+    if (star == 0.0) {
+        return vec3(0.0);
+    }
     star = pow16(star) * STARS_INTENSITY;
 
     float temp = mix(min_temp, max_temp, noise.y);

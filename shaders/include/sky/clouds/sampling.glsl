@@ -14,8 +14,9 @@ vec4 read_clouds_and_aurora(vec2 uv, out float apparent_distance) {
     vec4 result = textureLod(colortex11, uv * taau_render_scale, ld);
 
     if (LIGHTNING_FLASH_UNIFORM > 0.01) {
+        // Explicit LOD: callers may sample inside non-uniform control flow
         float ambient_scattering =
-            texture(colortex12, uv * taau_render_scale).z;
+            textureLod(colortex12, uv * taau_render_scale, 0.0).z;
         result.xyz += LIGHTNING_FLASH_UNIFORM * lightning_flash_intensity *
             ambient_scattering;
     }

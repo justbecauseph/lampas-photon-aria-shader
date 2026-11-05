@@ -1,5 +1,77 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase PERF5 — Image-preserving Optimizations (Completed; in-game check and FPS unverified)
+
+### Scope and Acceptance Criteria
+
+- Scope: the 16 items under PERF5 in `PLAN.md`, as validated on 2026-11-05 against the shader source, the Iris `26.2` source (`4ce5bb6dd`) and the Sodium `26.2/stable` source (`9c69d268`).
+  1. The opaque shadow pass (`shadow_solid`) writes 0 without a texture fetch or `discard`.
+  2. Fully opaque cutout shadow texels skip the colour work.
+  3. With `SHADOW_COLOR` off, the shadow pass skips colour work, and the per-frame `shadowcolor0` clear is turned off.
+  4. `c1` reads clouds only behind translucents. The lightning read becomes an explicit-LOD lookup.
+  5. Crepuscular rays return early when their amount is exactly 0.
+  6. Air and End VL skip shadow fetches outside the shadow map. Water VL is excluded.
+  7. The zero-length air-fog early-out applies to every Overworld-family world.
+  8. Cumulus, altocumulus and cumulus congestus return early when they hit no cloud.
+  9. Stars return early for texels with no star.
+  10. FXAA fetches its corner texels after the early exit.
+  11. Rain puddles reject early, and skip ripples when there is no rain.
+  12. Colour grading moves its frame-uniform work to the vertex shader, and skips the contrast step at contrast 1.
+  13. The bloom merge pass covers only the odd tiles, plus a 2-pixel margin.
+  14. `c1` skips the neutral fog buffers when VL is off, with a constant fallback for `BLOOMY_FOG`.
+  15. Shadow filter disc taps rotate incrementally instead of computing trig per tap.
+  16. Underwater and End fog compute their phase terms once per pixel instead of per step.
+- **Owner decision (2026-11-05):** item 1 is approved even though it changes leaf shadows when Cutout Leaves is off. Holey shadows become solid, matching the opaque leaves that are drawn.
+- **Acceptance:**
+  - Output matches the original apart from floating-point rounding, except for item 1's documented alpha behaviour.
+  - Each early exit returns exactly the neutral value its consumer expects.
+  - No implicit-derivative lookup moves into non-uniform control flow.
+  - `validate_perf1.py` changes only as listed in `PLAN.md`.
+  - Wrapper, PERF1 and profile validators and `git diff --check` pass.
+  - glslang compiles every touched program in world0, Aria, Nether and End, with Voxy variants, under the default, `low` and `lowest` profiles plus four extra option sets: `BLOOMY_FOG` with VL off, colored light shafts with `SHADOW_COLOR`, `COLORED_LIGHTS` with VL off, and `GRADE_CONTRAST=1.20`.
+  - The in-game screenshot comparison and timings follow `PLAN.md`. If they are not done, the phase is recorded as unverified.
+
+### Implementation
+
+- **Shadow pass, items 1–3** (`program/shadow.fsh`, `include/buffers.glsl`):
+  - `PROGRAM_SHADOW_SOLID` writes 0 with no texture fetch and no `discard`.
+  - Cutout programs keep the 0.1 alpha test. With `SHADOW_COLOR` on, texels with alpha above 254/255 return 0 before the colour conversion; with it off, the shader writes 0. Water writes 0 when `SHADOW_COLOR` is off.
+  - `buffers.glsl` now sets `const bool shadowcolor0Clear = false;` under `#ifndef SHADOW_COLOR`. This is real code after the comment block, because Iris never evaluates directives inside the block.
+- **Blend pass, items 4 and 14** (`program/c1_blend_layers.fsh`, `include/sky/clouds/sampling.glsl`):
+  - `c1` calls `read_clouds_and_aurora()` only inside the translucent branch. Its lightning read is now `textureLod(…, 0.0)`; `colortex12` has no mipmaps, so `d4`, the other caller, is unaffected.
+  - The VL fog fetch and blend need `VL` or `LPV_VL && COLORED_LIGHTS`. Otherwise `fog_transmittance` is the constant `vec3(1.0)`, which keeps `BLOOMY_FOG` compiling with VL off.
+- **Fog and clouds, items 5–8:**
+  - `crepuscular_rays.glsl` returns `(0, 0, 0, 1)` when the amount is exactly 0.
+  - Air fog (plain and colored paths) and End fog fetch shadow textures only inside the shadow map, starting from an unshadowed value of 1. End fog also drops its unused `depth0` fetch. Water fog is unchanged (moved to FIX1).
+  - The zero-length air-fog early-out no longer needs `WORLD_ARIA`.
+  - Cumulus, altocumulus and cumulus congestus return `CloudsResult(vec4(0.0), 1.0, 1e6)` when the weight sum is 0. All three loops add only non-negative post-fade density to that sum, and their scattering functions multiply by `(1 - step_transmittance) / extinction`, so zero weight means zero scattering.
+- **Sky and post-processing, items 9–13:**
+  - Stars return early when the star value is 0.
+  - FXAA fetches the four corner texels after its contrast exit.
+  - Puddles reject non-upward faces and skylight at or below 14/15 before the noise fetch, and skip ripples when `rainStrength == 0`, keeping the puddle-normal blend and `normalize_safe`.
+  - `c14_color_grading.vsh` passes `exposure` and `vignette_exponent` as flat varyings, and the contrast step runs only when the constant `contrast != 1.0`.
+  - The `c11` quad covers x∈[0.5, 1], y∈[0.75 − 2 px, 1].
+- **Rounding-only changes, items 15–16:**
+  - New `vogel_disc_sample_incremental()` in `utility/sampling.glsl` rotates the disc by the golden angle with a constant matrix. The PCSS blocker search and PCF loops use it; the original function stays for its other callers.
+  - Water and End fog precompute the 4 Henyey-Greenstein phase values before the step loop.
+- **Validator** (`tools/validate_perf1.py`):
+  - `LATER_PHASE_EDITS` gains the item 6, 7 and 8 edits for `raymarched.glsl`, `cumulus.glsl` and `altocumulus.glsl`.
+  - `raymarched.glsl` now expects no `WORLD_ARIA` guard.
+  - The fog fast-path check finds the guard by `if (ray_length == 0.0)`.
+  - It still runs 37 checks. Removing the item 7 edit, the plain item 6 edit, or the cumulus item 8 edit from the table, in memory, each makes the parity check fail.
+
+### Validation
+
+- **glslang 16.6.0** (`C:\Users\markj\.local\bin\glslang.exe`), using a scratch harness that was deleted afterwards. The harness expands includes, applies the options, injects the Iris macros and compiles as 460 compatibility.
+  - **Coverage:**
+    - Programs: `shadow` (all six), `composite`, `composite1`, `composite2`, `composite11` (vertex and fragment), `composite14` (vertex and fragment), `composite16`, `deferred`, `deferred1`, `deferred4` (vertex and fragment), `deferred4_a`, `final`, `prepare`, `gbuffers_water`, `gbuffers_terrain` and `dh_water`.
+    - Variants: world0, Aria, Nether and End, with Voxy variants for `composite`, `composite1`, `deferred1`, `deferred4` and `gbuffers_water`, and a DH variant for `dh_water`.
+    - Option sets: default, `low`, `lowest`, `BLOOMY_FOG` with VL off, colored light shafts with `SHADOW_COLOR`, `COLORED_LIGHTS` with VL off, and `GRADE_CONTRAST=1.20`.
+  - **Result:** HEAD compiled 756/784 and PERF5 compiled 756/784, with no regressions. All 28 failures are `composite2` hitting its own `#error` because DOF is off (the program is disabled in that case).
+- **Numerical check:** the incremental disc taps differ from the original by at most 7.3e-6 of the filter radius (float32, 2,000 random rotations at each step count 3–32).
+- **Validators:** wrappers (118 files, 23 properties), PERF1 (37 checks), profiles (5 profiles) and `git diff --check` pass.
+- **Not done:** the in-game screenshot comparison (six scenes; leaves with Cutout Leaves on and off; Low with `SHADOW_COLOR` off) and per-pass GPU timings. No speed-up is claimed.
+
 ## Phase ES1 — Disable Entity Shadows in Low, Medium and High (Completed)
 
 ### Scope and Acceptance Criteria

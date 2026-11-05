@@ -48,19 +48,16 @@ void main() {
 
     // Detecting where to apply AA
 
-    // Fetch 3x3 neighborhood
+    // Fetch the center and its direct neighbors; the corners are fetched only
+    // once an edge is detected
     // a b c
     // d e f
     // g h i
-    vec3 a = texelFetch(colortex0, texel + ivec2(-1, 1), 0).rgb;
     vec3 b = texelFetch(colortex0, texel + ivec2(0, 1), 0).rgb;
-    vec3 c = texelFetch(colortex0, texel + ivec2(1, 1), 0).rgb;
     vec3 d = texelFetch(colortex0, texel + ivec2(-1, 0), 0).rgb;
     vec3 e = texelFetch(colortex0, texel, 0).rgb;
     vec3 f = texelFetch(colortex0, texel + ivec2(1, 0), 0).rgb;
-    vec3 g = texelFetch(colortex0, texel + ivec2(-1, -1), 0).rgb;
     vec3 h = texelFetch(colortex0, texel + ivec2(0, -1), 0).rgb;
-    vec3 i = texelFetch(colortex0, texel + ivec2(1, -1), 0).rgb;
 
     // Luma at the current fragment
     float luma = get_luma(e);
@@ -88,6 +85,11 @@ void main() {
     // Estimating gradient and choosing edge direction
 
     // Get the lumas of the four remaining corners
+    vec3 a = texelFetch(colortex0, texel + ivec2(-1, 1), 0).rgb;
+    vec3 c = texelFetch(colortex0, texel + ivec2(1, 1), 0).rgb;
+    vec3 g = texelFetch(colortex0, texel + ivec2(-1, -1), 0).rgb;
+    vec3 i = texelFetch(colortex0, texel + ivec2(1, -1), 0).rgb;
+
     float luma_ul = get_luma(a);
     float luma_ur = get_luma(c);
     float luma_dl = get_luma(g);

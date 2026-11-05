@@ -215,9 +215,12 @@ void main() {
     vec4 refraction_data = texelFetch(colortex3, texel, 0);
     vec4 translucent_color = texelFetch(colortex13, texel, 0);
 
-#if defined VL || defined LPV_VL
+#if defined VL || (defined LPV_VL && defined COLORED_LIGHTS)
     vec3 fog_transmittance = smooth_filter(colortex6, uv).rgb;
     vec3 fog_scattering = smooth_filter(colortex7, uv).rgb;
+#else
+    // c0 writes neutral fog in this configuration
+    const vec3 fog_transmittance = vec3(1.0);
 #endif
 
     // LoD mod support
@@ -441,11 +444,11 @@ void main() {
     // Blend clouds in front of translucents
 
 #if defined WORLD_OVERWORLD
-    float clouds_apparent_distance;
-    vec4 clouds_and_aurora =
-        read_clouds_and_aurora(refracted_uv, clouds_apparent_distance);
-
     if (is_translucent || is_translucent_lod) {
+        float clouds_apparent_distance;
+        vec4 clouds_and_aurora =
+            read_clouds_and_aurora(refracted_uv, clouds_apparent_distance);
+
         if (clouds_apparent_distance < view_distance) {
             fragment_color =
                 fragment_color * clouds_and_aurora.w + clouds_and_aurora.xyz;
@@ -455,7 +458,7 @@ void main() {
 
     // Blend fog
 
-#if defined VL || defined LPV_VL
+#if defined VL || (defined LPV_VL && defined COLORED_LIGHTS)
     // Volumetric fog
 
     fragment_color = fragment_color * fog_transmittance + fog_scattering;

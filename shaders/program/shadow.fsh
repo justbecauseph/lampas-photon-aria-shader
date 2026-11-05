@@ -147,7 +147,9 @@ float get_water_caustics() {
 
 void main() {
     if (material_mask == 1) { // Water
-#if defined PROGRAM_SHADOW_WATER || defined PROGRAM_SHADOW_FALLBACK
+#if !defined SHADOW_COLOR
+        shadowcolor0_out = vec3(0.0);
+#elif defined PROGRAM_SHADOW_WATER || defined PROGRAM_SHADOW_FALLBACK
         vec3 biome_water_color = srgb_eotf_inv(tint) * rec709_to_working_color;
         vec3 absorption_coeff = biome_water_coeff(biome_water_color);
 
@@ -159,14 +161,31 @@ void main() {
         );
 #endif
     } else {
+#if defined PROGRAM_SHADOW_SOLID
+        // Sodium's solid layer is drawn opaque in the gbuffers, so cast an
+        // opaque shadow. Without a discard, early depth testing stays enabled.
+        shadowcolor0_out = vec3(0.0);
+#else
         vec4 base_color = textureLod(tex, uv, 0);
         if (base_color.a < 0.1) {
             discard;
+        }
+
+#ifdef SHADOW_COLOR
+        // Fully opaque texels write 0 (see the step() below)
+        if (base_color.a > 1.0 - rcp(255.0)) {
+            shadowcolor0_out = vec3(0.0);
+            return;
         }
 
         shadowcolor0_out = mix(vec3(1.0), base_color.rgb * tint, base_color.a);
         shadowcolor0_out =
             0.25 * srgb_eotf_inv(shadowcolor0_out) * rec709_to_rec2020;
         shadowcolor0_out *= step(base_color.a, 1.0 - rcp(255.0));
+#else
+        // Shadow color is only read when SHADOW_COLOR is enabled
+        shadowcolor0_out = vec3(0.0);
+#endif
+#endif
     }
 }

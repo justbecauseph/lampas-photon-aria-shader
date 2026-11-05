@@ -69,6 +69,15 @@ mat2x3 raymarch_water_fog(
 
     float LoV = dot(world_dir, light_dir);
 
+    // The phase terms depend only on LoV and the scattering order
+    float[multiple_scattering_iterations] mie_phases;
+    float anisotropy = 1.0;
+    for (uint i = 0u; i < multiple_scattering_iterations; ++i) {
+        mie_phases[i] = 0.7 * henyey_greenstein_phase(LoV, 0.5 * anisotropy) +
+            0.3 * isotropic_phase;
+        anisotropy *= 0.5;
+    }
+
     vec3 step_transmittance = exp(-extinction_coeff * step_length);
 
     vec3 scattering = vec3(0.0);
@@ -119,22 +128,16 @@ mat2x3 raymarch_water_fog(
             texture(noisetex, (caustics_pos + caustics_dir_1 * t) * 0.04).y;
         caustics = linear_step(0.4, 0.5, caustics) + 0.15;
 
-        float anisotropy = 1.0;
         float scattering_amount = 1.0;
         for (uint i = 0u; i < multiple_scattering_iterations; ++i) {
-            float mie_phase =
-                0.7 * henyey_greenstein_phase(LoV, 0.5 * anisotropy) +
-                0.3 * isotropic_phase;
-
             // Sunlight/moonlight
-            scattering += light_color * caustics * mie_phase *
+            scattering += light_color * caustics * mie_phases[i] *
                 light_transmittance * transmittance * scattering_amount;
 
             // Skylight
             scattering += ambient_color * isotropic_phase * transmittance *
                 scattering_amount * sky_transmittance;
 
-            anisotropy *= 0.5;
             scattering_amount *= 0.5;
             light_transmittance = sqrt(light_transmittance);
             sky_transmittance = sqrt(sky_transmittance);

@@ -364,6 +364,11 @@ CloudsResult draw_altocumulus_clouds(
         distance_weight_sum += density;
     }
 
+    // No sample had density, so scattering is 0 and transmittance is 1
+    if (distance_weight_sum == 0.0) {
+        return CloudsResult(vec4(0.0), 1.0, 1e6);
+    }
+
     // Get main light color for this layer
     vec3 light_color =
         sunlight_color * atmosphere_transmittance(ray_origin, light_dir);

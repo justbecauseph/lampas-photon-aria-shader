@@ -40,8 +40,14 @@ vec2 blocker_search(vec3 scene_pos, float dither, bool has_sss) {
     float weight_sum = 0.0;
     float depth_sum_sss = 0.0;
 
+    float rotation = dither * tau;
+    vec2 disc_dir = vec2(cos(rotation), sin(rotation));
+    float rcp_sqrt_step_count = inversesqrt(float(step_count));
+
     for (int i = 0; i < step_count; ++i) {
-        vec2 offset = vogel_disc_sample(i, step_count, dither * tau) * radius;
+        vec2 offset =
+            vogel_disc_sample_incremental(i, rcp_sqrt_step_count, disc_dir) *
+            radius;
         vec2 uv = shadow_clip_pos.xy + offset;
         uv /= get_distortion_factor(uv);
         uv = uv * 0.5 + 0.5;
@@ -114,10 +120,15 @@ vec3 shadow_pcf(
     vec3 color_sum = vec3(0.0);
     float weight_sum = 0.0;
 
+    float rotation = dither * tau;
+    vec2 disc_dir = vec2(cos(rotation), sin(rotation));
+    float rcp_sqrt_step_count = inversesqrt(float(step_count));
+
     // perform first 4 iterations and filter shadow color
     for (int i = 0; i < 4; ++i) {
         vec2 offset =
-            vogel_disc_sample(i, step_count, dither * tau) * filter_radius;
+            vogel_disc_sample_incremental(i, rcp_sqrt_step_count, disc_dir) *
+            filter_radius;
 
         vec2 uv = shadow_clip_pos.xy + offset;
         uv /= get_distortion_factor(uv);
@@ -160,7 +171,8 @@ vec3 shadow_pcf(
     // perform remaining iterations
     for (int i = 4; i < step_count; ++i) {
         vec2 offset =
-            vogel_disc_sample(i, step_count, dither * tau) * filter_radius;
+            vogel_disc_sample_incremental(i, rcp_sqrt_step_count, disc_dir) *
+            filter_radius;
 
         vec2 uv = shadow_clip_pos.xy + offset;
         uv /= get_distortion_factor(uv);

@@ -67,6 +67,12 @@ bool get_rain_puddles(
         return false;
     }
 
+    // get_puddle_noise() returns exactly 0 for non-upward faces and for
+    // skylight at or below 14/15; skip its texture fetch in those cases
+    if (flat_normal.y < 0.99 || light_levels.y <= 14.0 / 15.0) {
+        return false;
+    }
+
     float puddle = get_puddle_noise(world_pos, flat_normal, light_levels);
 
     if (puddle < eps) {
@@ -82,6 +88,13 @@ bool get_rain_puddles(
     f0 = max(f0, mix(f0, vec3(puddle_f0), puddle));
     roughness = puddle_roughness;
     ssr_multiplier = max(ssr_multiplier, puddle);
+
+    if (rainStrength == 0.0) {
+        // Ripples are weighted by rainStrength
+        normal = mix(normal, flat_normal, puddle);
+        normal = normalize_safe(normal);
+        return true;
+    }
 
     // Ripple animation
     const float h = 0.1;

@@ -128,6 +128,15 @@ mat2x3 raymarch_end_fog(
 
     float LoV = dot(world_dir, light_dir);
 
+    // The phase terms depend only on LoV and the scattering order
+    float[multiple_scattering_iterations] mie_phases;
+    float anisotropy = 1.0;
+    for (uint i = 0u; i < multiple_scattering_iterations; ++i) {
+        mie_phases[i] = 0.7 * henyey_greenstein_phase(LoV, 0.5 * anisotropy) +
+            0.3 * isotropic_phase;
+        anisotropy *= 0.5;
+    }
+
     vec3 scattering = vec3(0.0);
     vec3 transmittance = vec3(1.0);
 
@@ -139,13 +148,12 @@ mat2x3 raymarch_end_fog(
         ivec2 shadow_texel = ivec2(
             shadow_screen_pos.xy * shadowMapResolution * MC_SHADOW_QUALITY
         );
-        float depth0 = texelFetch(shadowtex0, shadow_texel, 0).x;
-        float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;
-        float shadow = step(
-            float(clamp01(shadow_screen_pos) == shadow_screen_pos) *
-                shadow_screen_pos.z,
-            depth1
-        );
+        // Outside the shadow map the ray is unshadowed; skip the fetch
+        float shadow = 1.0;
+        if (clamp01(shadow_screen_pos) == shadow_screen_pos) {
+            float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;
+            shadow = step(shadow_screen_pos.z, depth1);
+        }
 #else
 #define shadow 1.0
 #endif
@@ -159,22 +167,16 @@ mat2x3 raymarch_end_fog(
 
         vec3 visible_scattering = step_transmitted_fraction * transmittance;
 
-        float anisotropy = 1.0;
         float scattering_amount = 1.0;
         for (uint i = 0u; i < multiple_scattering_iterations; ++i) {
-            float mie_phase =
-                0.7 * henyey_greenstein_phase(LoV, 0.5 * anisotropy) +
-                0.3 * isotropic_phase;
-
             // Sunlight
-            scattering += density * light_color * mie_phase * shadow *
+            scattering += density * light_color * mie_phases[i] * shadow *
                 visible_scattering * scattering_amount;
 
             // Ambient light
             scattering += density * ambient_color * isotropic_phase *
                 visible_scattering * scattering_amount;
 
-            anisotropy *= 0.5;
             scattering_amount *= 0.5;
         }
 

@@ -90,11 +90,9 @@ mat2x3 raymarch_air_fog(
     ray_length = sky ? distance_to_volume_end : ray_length;
     ray_length = clamp(ray_length - distance_to_volume_start, 0.0, fog_end);
 
-#ifdef WORLD_ARIA
     if (ray_length == 0.0) {
         return mat2x3(vec3(0.0), vec3(1.0));
     }
-#endif
 
     uint step_count = uint(
         float(air_fog_min_step_count) + air_fog_step_count_growth * ray_length
@@ -127,26 +125,27 @@ mat2x3 raymarch_air_fog(
 
 // Colored light shafts need the shadow color buffer
 #if defined AIR_FOG_COLORED_LIGHT_SHAFTS && defined SHADOW_COLOR
-        float depth0 = texelFetch(shadowtex0, shadow_texel, 0).x;
-        float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;
-        vec3 color =
-            clamp01(texelFetch(shadowcolor0, shadow_texel, 0).rgb * 4.0);
-        float color_weight =
-            step(depth0, shadow_screen_pos.z) * step(eps, max_of(color));
+        // Outside the shadow map the ray is unshadowed; skip the fetches
+        vec3 shadow = vec3(1.0);
+        if (clamp01(shadow_screen_pos) == shadow_screen_pos) {
+            float depth0 = texelFetch(shadowtex0, shadow_texel, 0).x;
+            float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;
+            vec3 color =
+                clamp01(texelFetch(shadowcolor0, shadow_texel, 0).rgb * 4.0);
+            float color_weight =
+                step(depth0, shadow_screen_pos.z) * step(eps, max_of(color));
 
-        color = color * color_weight + (1.0 - color_weight);
+            color = color * color_weight + (1.0 - color_weight);
 
-        vec3 shadow = step(shadow_screen_pos.z, depth1) * color;
-        shadow = (clamp01(shadow_screen_pos) == shadow_screen_pos)
-            ? shadow
-            : vec3(1.0);
+            shadow = step(shadow_screen_pos.z, depth1) * color;
+        }
 #else
-        float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;
-        float shadow = step(
-            float(clamp01(shadow_screen_pos) == shadow_screen_pos) *
-                shadow_screen_pos.z,
-            depth1
-        );
+        // Outside the shadow map the ray is unshadowed; skip the fetch
+        float shadow = 1.0;
+        if (clamp01(shadow_screen_pos) == shadow_screen_pos) {
+            float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;
+            shadow = step(shadow_screen_pos.z, depth1);
+        }
 #endif
 #else
 #define shadow 1.0

@@ -24,18 +24,84 @@ EDITED_SHADERS = (
     Path("shaders/include/sky/clouds/altocumulus.glsl"),
 )
 
+# PERF5 item 8: empty cloud layers return before lighting and aerial perspective.
+PERF5_EMPTY_CLOUD_LAYER = (
+    "    // Get main light color for this layer\n",
+    "    if (distance_weight_sum == 0.0) {\n"
+    "        return CloudsResult(vec4(0.0), 1.0, 1e6);\n"
+    "    }\n"
+    "\n"
+    "    // Get main light color for this layer\n",
+)
+
 # Intentional non-Aria edits made after PERF1, applied to the baseline text
 # before the parity comparison so later phases do not mask PERF1 regressions.
 LATER_PHASE_EDITS = {
-    # U1: upstream 3e0f3e3 requires SHADOW_COLOR for colored light shafts.
     Path("shaders/include/fog/overworld/raymarched.glsl"): (
+        # U1: upstream 3e0f3e3 requires SHADOW_COLOR for colored light shafts.
         (
             "#ifdef AIR_FOG_COLORED_LIGHT_SHAFTS\n        float depth0",
             "#if defined AIR_FOG_COLORED_LIGHT_SHAFTS && defined SHADOW_COLOR\n"
             "        float depth0",
         ),
+        # PERF5 item 7: the zero-length early-out applies to every world.
+        (
+            "    ray_length = clamp(ray_length - distance_to_volume_start, 0.0, fog_end);\n",
+            "    ray_length = clamp(ray_length - distance_to_volume_start, 0.0, fog_end);\n"
+            "\n"
+            "    if (ray_length == 0.0) {\n"
+            "        return mat2x3(vec3(0.0), vec3(1.0));\n"
+            "    }\n",
+        ),
+        # PERF5 item 6: fetch shadow textures only inside the shadow map.
+        (
+            "        float depth0 = texelFetch(shadowtex0, shadow_texel, 0).x;\n"
+            "        float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;\n"
+            "        vec3 color =\n"
+            "            clamp01(texelFetch(shadowcolor0, shadow_texel, 0).rgb * 4.0);\n"
+            "        float color_weight =\n"
+            "            step(depth0, shadow_screen_pos.z) * step(eps, max_of(color));\n"
+            "\n"
+            "        color = color * color_weight + (1.0 - color_weight);\n"
+            "\n"
+            "        vec3 shadow = step(shadow_screen_pos.z, depth1) * color;\n"
+            "        shadow = (clamp01(shadow_screen_pos) == shadow_screen_pos)\n"
+            "            ? shadow\n"
+            "            : vec3(1.0);\n",
+            "        vec3 shadow = vec3(1.0);\n"
+            "        if (clamp01(shadow_screen_pos) == shadow_screen_pos) {\n"
+            "            float depth0 = texelFetch(shadowtex0, shadow_texel, 0).x;\n"
+            "            float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;\n"
+            "            vec3 color =\n"
+            "                clamp01(texelFetch(shadowcolor0, shadow_texel, 0).rgb * 4.0);\n"
+            "            float color_weight =\n"
+            "                step(depth0, shadow_screen_pos.z) * step(eps, max_of(color));\n"
+            "\n"
+            "            color = color * color_weight + (1.0 - color_weight);\n"
+            "\n"
+            "            shadow = step(shadow_screen_pos.z, depth1) * color;\n"
+            "        }\n",
+        ),
+        (
+            "        float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;\n"
+            "        float shadow = step(\n"
+            "            float(clamp01(shadow_screen_pos) == shadow_screen_pos) *\n"
+            "                shadow_screen_pos.z,\n"
+            "            depth1\n"
+            "        );\n",
+            "        float shadow = 1.0;\n"
+            "        if (clamp01(shadow_screen_pos) == shadow_screen_pos) {\n"
+            "            float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;\n"
+            "            shadow = step(shadow_screen_pos.z, depth1);\n"
+            "        }\n",
+        ),
     ),
+    Path("shaders/include/sky/clouds/cumulus.glsl"): (PERF5_EMPTY_CLOUD_LAYER,),
+    Path("shaders/include/sky/clouds/altocumulus.glsl"): (PERF5_EMPTY_CLOUD_LAYER,),
 }
+
+# PERF5 item 7 removed the only WORLD_ARIA guard from the air-fog march.
+NO_ARIA_GUARD_EXPECTED = {Path("shaders/include/fog/overworld/raymarched.glsl")}
 
 
 def apply_later_phase_edits(path: Path, text: str) -> str:
@@ -212,7 +278,10 @@ def run(baseline: str) -> int:
         current = (ROOT / path).read_text(encoding="utf-8")
         before = apply_later_phase_edits(path, git_text(baseline, path))
         check(f"{path}: WORLD_ARIA-disabled source differs from baseline", comparable(without_aria(current)) == comparable(before))
-        check(f"{path}: current source contains a WORLD_ARIA guard", "WORLD_ARIA" in current)
+        if path in NO_ARIA_GUARD_EXPECTED:
+            check(f"{path}: zero-length guard is unconditional", "WORLD_ARIA" not in current)
+        else:
+            check(f"{path}: current source contains a WORLD_ARIA guard", "WORLD_ARIA" in current)
 
     shadow_source = (ROOT / EDITED_SHADERS[0]).read_text(encoding="utf-8")
     check("cloud shadow fast path has exact-zero condition", "if (cloud_shadow_fade == 0.0)" in shadow_source)
@@ -226,7 +295,7 @@ def run(baseline: str) -> int:
 
     fog_source = (ROOT / EDITED_SHADERS[1]).read_text(encoding="utf-8")
     clamp = fog_source.index("ray_length = clamp(")
-    fast_path = fog_source.index("#ifdef WORLD_ARIA", clamp)
+    fast_path = fog_source.index("if (ray_length == 0.0)", clamp)
     step_setup = fog_source.index("uint step_count", fast_path)
     check("air fog fast path follows clamp", clamp < fast_path < step_setup)
     fog_neutral = fog_source[fast_path:step_setup]

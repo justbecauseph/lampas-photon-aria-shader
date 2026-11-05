@@ -17,6 +17,12 @@ layout(location = 0) out vec3 scene_color;
 
 in vec2 uv;
 
+flat in float exposure;
+
+#ifdef VIGNETTE
+flat in float vignette_exponent;
+#endif
+
 #if GRADE_WHITE_BALANCE != 6500
 flat in mat3 white_balance_matrix;
 #endif
@@ -104,17 +110,19 @@ vec3 gain(vec3 x, float k) {
 // rgb := color in acescg [0, inf]
 vec3 grade_input(vec3 rgb) {
     float brightness = 0.83 * GRADE_BRIGHTNESS;
-    float contrast = 1.00 * GRADE_CONTRAST;
+    const float contrast = 1.00 * GRADE_CONTRAST;
     float saturation = 0.98 * GRADE_SATURATION;
 
     // Brightness
     rgb *= brightness;
 
-    // Contrast
-    const float log_midpoint = log2(0.18);
-    rgb = log2(rgb + eps);
-    rgb = contrast * (rgb - log_midpoint) + log_midpoint;
-    rgb = max0(exp2(rgb) - eps);
+    // Contrast (identity at the default contrast of 1.0; folded at compile time)
+    if (contrast != 1.0) {
+        const float log_midpoint = log2(0.18);
+        rgb = log2(rgb + eps);
+        rgb = contrast * (rgb - log_midpoint) + log_midpoint;
+        rgb = max0(exp2(rgb) - eps);
+    }
 
     // Saturation
     float lum = dot(rgb, luminance_weights);
@@ -167,28 +175,22 @@ vec3 grade_output(vec3 rgb) {
     return sqr(rgb);
 }
 
+#ifdef VIGNETTE
 float vignette(vec2 uv) {
     const float vignette_size = 16.0;
-    const float vignette_intensity = 0.08 * VIGNETTE_INTENSITY;
-
-    float darkness_pulse = 1.0 - dampen(abs(cos(2.0 * frameTimeCounter)));
 
     float vignette =
         vignette_size * (uv.x * uv.y - uv.x) * (uv.x * uv.y - uv.y);
-    vignette =
-        pow(vignette,
-            vignette_intensity + 0.1 * biome_cave + 0.3 * blindness +
-                0.2 * darkness_pulse * darknessFactor);
+    vignette = pow(vignette, vignette_exponent);
 
     return vignette;
 }
+#endif
 
 void main() {
     ivec2 texel = ivec2(gl_FragCoord.xy);
 
     scene_color = texelFetch(colortex5, texel, 0).rgb;
-
-    float exposure = texelFetch(colortex5, ivec2(0), 0).a;
 
 #ifdef BLOOM
     vec3 fog_bloom;
