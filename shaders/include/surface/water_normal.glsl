@@ -195,7 +195,7 @@ vec2 get_water_parallax_coord(
 
     float depth_value = get_water_height(coord, wave_dir, wave_rot, t);
     float depth_march = 0.0;
-    float depth_previous;
+    float depth_previous = depth_value; // read if the loop never runs
 
     while (depth_march < depth_value) {
         coord += ray_step;

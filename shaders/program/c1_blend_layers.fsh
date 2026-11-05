@@ -218,9 +218,6 @@ void main() {
 #if defined VL || (defined LPV_VL && defined COLORED_LIGHTS)
     vec3 fog_transmittance = smooth_filter(colortex6, uv).rgb;
     vec3 fog_scattering = smooth_filter(colortex7, uv).rgb;
-#else
-    // c0 writes neutral fog in this configuration
-    const vec3 fog_transmittance = vec3(1.0);
 #endif
 
     // LoD mod support
@@ -509,8 +506,9 @@ void main() {
         fragment_color += analytic_fog[0];
 
 #ifdef BLOOMY_FOG
+        // Without VL, the fog applied here is the analytic fog
         bloomy_fog =
-            clamp01(dot(fog_transmittance, vec3(luminance_weights_rec2020)));
+            clamp01(dot(analytic_fog[1], vec3(luminance_weights_rec2020)));
         bloomy_fog = isEyeInWater == 1.0 ? sqrt(bloomy_fog) : bloomy_fog;
 #endif
 #else

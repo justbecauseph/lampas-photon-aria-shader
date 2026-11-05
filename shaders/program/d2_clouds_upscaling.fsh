@@ -106,19 +106,15 @@ vec4 smooth_filter(sampler2D sampler, vec2 coord) {
     return texture(sampler, coord);
 }
 
+// Gathers at +/-1 texel cover a contiguous 4x4 block including the center; at
+// +/-2 texels they skipped the center rows and columns
 float texture_min_4x4(sampler2D s, vec2 coord) {
     vec2 pixel_size = rcp(textureSize(s, 0).xy);
 
-    vec4 samples_0 =
-        textureGather(s, coord + vec2(2.0 * pixel_size.x, 2.0 * pixel_size.y));
-    vec4 samples_1 =
-        textureGather(s, coord + vec2(-2.0 * pixel_size.x, 2.0 * pixel_size.y));
-    vec4 samples_2 =
-        textureGather(s, coord + vec2(2.0 * pixel_size.x, -2.0 * pixel_size.y));
-    vec4 samples_3 = textureGather(
-        s,
-        coord + vec2(-2.0 * pixel_size.x, -2.0 * pixel_size.y)
-    );
+    vec4 samples_0 = textureGather(s, coord + vec2(pixel_size.x, pixel_size.y));
+    vec4 samples_1 = textureGather(s, coord + vec2(-pixel_size.x, pixel_size.y));
+    vec4 samples_2 = textureGather(s, coord + vec2(pixel_size.x, -pixel_size.y));
+    vec4 samples_3 = textureGather(s, coord + vec2(-pixel_size.x, -pixel_size.y));
 
     return min(
         min(min_of(samples_0), min_of(samples_1)),
@@ -320,7 +316,7 @@ void main() {
     // Replace history if a disocclusion was detected
     if (disocclusion) {
         history = current;
-        history.z = ambient_scattering;
+        history_data.z = ambient_scattering;
     }
 
     // Perform neighbourhood clamping when moving quickly relative to the clouds

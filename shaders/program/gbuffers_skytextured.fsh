@@ -20,6 +20,7 @@ in vec3 view_pos;
 
 #if MC_VERSION >= 260100
 in vec2 uv_mid;
+flat in vec2 uv_half_size;
 #endif
 
 flat in vec3 tint;
@@ -62,11 +63,18 @@ void main() {
         // NB: not using renderStage to distinguish sun and moon because it's
         // broken in Iris for Minecraft 1.21.4
 
+        // Position within the sun sprite in [-1, 1]. Since 26.1 the sun is a
+        // sprite in the celestials atlas, so uv is not a 0-1 quad coordinate.
+#if MC_VERSION >= 260100
+        offset = (uv - uv_mid) / max(uv_half_size, vec2(eps));
+#else
+        offset = uv * 2.0 - 1.0;
+#endif
+
         // Cut out the sun itself (discard the halo around it)
         if (max_of(abs(offset)) > 0.25) {
             discard;
         }
-        offset = uv * 2.0 - 1.0;
 
 #ifdef VANILLA_SUN
         frag_color = texture(gtexture, new_uv).rgb;

@@ -62,7 +62,7 @@ bool get_rain_puddles(
     const float puddle_darkening_factor = 0.33;
     const float puddle_darkening_factor_porous = 0.67;
 
-    if (wetness < 0.0 || biome_may_rain < 0.0 ||
+    if (wetness < eps || biome_may_rain < eps ||
         material_mask == MATERIAL_LEAVES) {
         return false;
     }

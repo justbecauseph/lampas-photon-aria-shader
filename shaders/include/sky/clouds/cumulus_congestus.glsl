@@ -1,4 +1,4 @@
-#if !defined INCLUDe_SKY_CLOUDS_CUMULUS_CONGESTUS
+#if !defined INCLUDE_SKY_CLOUDS_CUMULUS_CONGESTUS
 #define INCLUDE_SKY_CLOUDS_CUMULUS_CONGESTUS
 
 // Alternative 1st layer: distant cumulus congestus clouds

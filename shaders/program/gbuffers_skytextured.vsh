@@ -16,6 +16,7 @@ out vec3 view_pos;
 
 #if MC_VERSION >= 260100
 out vec2 uv_mid;
+flat out vec2 uv_half_size; // half the sprite size in atlas UV
 #endif
 
 flat out vec3 tint;
@@ -57,6 +58,8 @@ void main() {
 #if MC_VERSION >= 260100
     uv_mid =
         mat2(gl_TextureMatrix[0]) * mc_midTexCoord + gl_TextureMatrix[0][3].xy;
+    // Every corner of the celestial quad is a sprite corner
+    uv_half_size = abs(uv - uv_mid);
 #endif
 
     view_pos = transform(gl_ModelViewMatrix, gl_Vertex.xyz);

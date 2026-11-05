@@ -16,7 +16,10 @@ void voxy_emitFragment(VoxyFragmentParameters parameters) {
                   ) *
         (float(int(parameters.face) & 1) * 2.0 - 1.0);
 
-    uint material_mask = max(parameters.customId - 10000u, 0u);
+    // Unsigned subtraction would wrap for IDs below 10000
+    uint material_mask = parameters.customId >= 10000u
+        ? parameters.customId - 10000u
+        : 0u;
 
     // Encode gbuffer data
 

@@ -128,22 +128,24 @@ uniform float biome_humidity;
 const int checkerboard_area =
     CLOUDS_TEMPORAL_UPSCALING * CLOUDS_TEMPORAL_UPSCALING;
 
+// Gathers at +/-1 pixel cover a contiguous 4x4 block of texels; at +/-2 pixels
+// they skipped the middle two rows and columns
 float depth_max_4x4(sampler2D depth_sampler, float scale) {
     vec4 depth_samples_0 = textureGather(
         depth_sampler,
-        uv * scale + vec2(2.0 * view_pixel_size.x, 2.0 * view_pixel_size.y)
+        uv * scale + vec2(view_pixel_size.x, view_pixel_size.y)
     );
     vec4 depth_samples_1 = textureGather(
         depth_sampler,
-        uv * scale + vec2(-2.0 * view_pixel_size.x, 2.0 * view_pixel_size.y)
+        uv * scale + vec2(-view_pixel_size.x, view_pixel_size.y)
     );
     vec4 depth_samples_2 = textureGather(
         depth_sampler,
-        uv * scale + vec2(2.0 * view_pixel_size.x, -2.0 * view_pixel_size.y)
+        uv * scale + vec2(view_pixel_size.x, -view_pixel_size.y)
     );
     vec4 depth_samples_3 = textureGather(
         depth_sampler,
-        uv * scale + vec2(-2.0 * view_pixel_size.x, -2.0 * view_pixel_size.y)
+        uv * scale + vec2(-view_pixel_size.x, -view_pixel_size.y)
     );
 
     return max(

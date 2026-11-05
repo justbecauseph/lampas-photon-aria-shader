@@ -83,7 +83,8 @@ uniform int renderStage;
 
 void main() {
     uv = gl_MultiTexCoord0.xy;
-    material_mask = uint(mc_Entity.x - 10000.0);
+    // mc_Entity.x is -1 or 0 for unmapped blocks and entities
+    material_mask = uint(max0(mc_Entity.x - 10000.0));
     tint = gl_Color.rgb;
 
 #if defined COLORED_LIGHTS && !defined PROGRAM_SHADOW_ENTITIES

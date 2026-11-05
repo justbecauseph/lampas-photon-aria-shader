@@ -187,7 +187,7 @@ Every item below was confirmed against the source during validation.
    - **Fix:** `customId >= 10000u ? customId - 10000u : 0u`.
 3. **Sun halo test reads an unassigned variable.** `program/gbuffers_skytextured.fsh:48, 66-69`
    - **Now:** `offset` is declared without a value and read before it is assigned.
-   - **Fix:** move line 69 above the `if`, then check in game that the sun disc and halo cut-out look right. This changes the image.
+   - **Fix (as implemented):** since Minecraft 26.1 the sun is a sprite in the celestials atlas, so moving `offset = uv * 2.0 - 1.0` above the `if` would discard the whole vanilla sun. On 26.1+, `offset` is measured from `uv_mid` and divided by the sprite's half-size in UV (a flat varying); older versions keep `uv * 2.0 - 1.0`. Only `VANILLA_SUN` builds change; check the sun disc and halo cut-out in game with it on.
 4. **Wrong value written to cloud history.** `program/d2_clouds_upscaling.fsh:323`
    - **Now:** `history.z = ambient_scattering` overwrites the history's blue channel. The intended target was `history_data.z`, which `:378` and `:408` read.
    - **Fix:** `history_data.z = ambient_scattering`.

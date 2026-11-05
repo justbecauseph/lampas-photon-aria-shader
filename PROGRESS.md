@@ -1,5 +1,69 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase FIX1 — Correctness Bugs Found During the Audit (Completed except item 8; in-game check pending)
+
+### Scope and Acceptance Criteria
+
+- **Scope:** FIX1 items 1–7 and 9–13 from `PLAN.md`. Upstream Photon `main` (`5c79f54`) still has every one of these bugs, so there are no upstream fixes to port.
+  1. Clamp the histogram's upper bin index.
+  2. Make Voxy material ID subtraction safe for unsigned wraparound.
+  3. Give the sun halo cut-out a defined offset. **Adjusted from the plan:** Minecraft 26.x draws celestials from an atlas (`atlases/celestials.json`), so `uv * 2.0 - 1.0` is not a position within the sun sprite and would discard the whole vanilla sun. On 26.1+ the offset is measured from `uv_mid` and divided by the sprite's half-size in UV, passed as a flat varying. Older versions keep `uv * 2.0 - 1.0`.
+  4. Write `ambient_scattering` to `history_data.z` instead of `history.z` on cloud disocclusion.
+  5. Fix the misspelled include guards in `cumulus_congestus.glsl` and `sky.glsl`.
+  6. Pass the jittered `ray_dir` to the screen-space shadow march in the non-LOD path. Upstream added the jitter only to the LOD path (`71ed66a`, "Borked Voxy TAAU integration") and left the non-LOD path on `view_light_dir`.
+  7. Clamp the shadow vertex material ID before the `uint` conversion.
+  9. Make the 4×4 depth footprints in `d1` and `d2` contiguous (±1 px gather offsets).
+  10. Change the puddle guard from `< 0.0` to `< eps`.
+  11. Initialise `depth_previous` in water parallax.
+  12. Without VL, compute bloomy fog from the analytic fog transmittance.
+  13. Water VL fetches shadow depth only inside the shadow map. Outside it, use shadow 1 and the same distances as the no-shadow branch.
+- **Deferred:** item 8 (`VL_RENDER_SCALE`) waits for the owner to choose between removing the option and supporting only ≤ 0.5. The cloud-shadow `length(pos.xy)` note stays unchanged.
+- **Acceptance:**
+  - Items 1, 2, 4, 5, 7, 10 and 11 leave the default-profile image unchanged.
+  - Item 3 changes only `VANILLA_SUN` builds; by default the sun pass writes 0 into a buffer cleared to 0, with blending off.
+  - Items 6, 9, 12 and 13 are expected to change the image and need an in-game check.
+  - Validators and `git diff --check` pass.
+  - glslang compiles every touched program in its affected variants: `AUTO_EXPOSURE_HISTOGRAM`, `COLORED_LIGHTS`, `BLOOMY_FOG` with VL off, `VANILLA_SUN`, Voxy and no-LOD.
+
+### Implementation
+
+- **Exposure histogram, item 1** (`c4_taa_exposure.vsh`): `bin1 = min(bin0 + 1u, uint(HISTOGRAM_BINS - 1))`. The weight on the top bin is `fract(bins - 1) = 0`, so the histogram values don't change.
+- **Voxy material IDs, item 2** (`voxy_opaque.glsl`, `voxy_translucent.glsl`): `customId >= 10000u ? customId - 10000u : 0u`.
+- **Sun halo cut-out, item 3** (`gbuffers_skytextured.vsh/.fsh`):
+  - The vertex shader outputs `flat uv_half_size = abs(uv - uv_mid)`. Every corner of the celestial quad is a sprite corner, so each one gives the same value.
+  - The fragment shader computes `offset` before the cut-out test: `(uv - uv_mid) / max(uv_half_size, eps)` on 26.1+, and `uv * 2.0 - 1.0` on older versions.
+  - With the 26.2 sun sprite (32×32), the `0.25` threshold keeps the central 8×8 core.
+  - `VANILLA_SUN` is off by default. In that case the sun branch writes 0 into `colortex0`, which is cleared to 0 with blending off, and `gbuffers_skybasic` discards everything, so discarding or writing gives the same result.
+- **Cloud history, item 4** (`d2_clouds_upscaling.fsh`): writes `history_data.z = ambient_scattering`. Image unchanged, because on disocclusion `history_weight` is exactly 0.
+- **Include guards, item 5:** the guards in `cumulus_congestus.glsl` and `sky.glsl` now match their `#define`s. Nothing includes either file twice today; that would already have been a compile error.
+- **Screen-space shadow jitter, item 6** (`ssrt.glsl`): the non-LOD path passes the jittered `ray_dir`, as the LOD path does.
+- **Shadow vertex material ID, item 7** (`shadow.vsh`): `uint(max0(mc_Entity.x - 10000.0))`.
+- **Cloud depth footprints, item 9:**
+  - `d1` `depth_max_4x4` and `d2` `texture_min_4x4` gather at ±1 pixel instead of ±2.
+  - For a cloud pixel at quarter resolution, the `d1` footprint now covers exactly the 4×4 full-res texels under it, instead of {−1, 0, +3, +4}.
+  - The `d2` footprint now covers {−1…+2} around the pixel, including the pixel itself.
+- **Puddle guard, item 10** (`rain_puddles.glsl`): `wetness < eps || biome_may_rain < eps`. The puddle value is at most `wetness × biome_may_rain`, so it was already rejected below `eps`.
+- **Water parallax, item 11** (`water_normal.glsl`): `depth_previous` starts at `depth_value`.
+- **Bloomy fog, item 12** (`c1_blend_layers.fsh`): without VL, the Overworld bloomy fog uses `analytic_fog[1]`. The PERF5 `fog_transmittance` fallback constant was no longer used, so it is removed.
+- **Water VL, item 13** (`water_fog_vl.glsl`): shadow depth is fetched only inside the shadow map. Outside it, shadow is 1, `distance_traveled` is 0, and `distance_traveled_sky` is the cap, which are the no-shadow branch's values.
+
+### Validation
+
+- **glslang 16.6.0**, using a scratch harness that was deleted afterwards. The harness now sets `MC_VERSION 260200`, so the 26.1+ celestial-atlas paths compile.
+  - **Coverage:**
+    - Programs: `shadow`, `shadow_solid`, `shadow_cutout` and `shadow_entities` (vertex); `composite`, `composite1`, `composite4` (vertex and fragment), `deferred`, `deferred1`, `deferred2`, `deferred4` and `prepare`; `gbuffers_skytextured` (vertex and fragment), `gbuffers_water` (vertex and fragment), `gbuffers_terrain` and `dh_water`.
+    - Variants: world0, Aria, Nether and End, with Voxy variants for `composite`, `composite1`, `deferred1`, `deferred2`, `deferred4` and `gbuffers_water`, and a DH variant for `dh_water`.
+    - Option sets: default, `low`, `lowest`, `AUTO_EXPOSURE_HISTOGRAM`, `COLORED_LIGHTS`, `BLOOMY_FOG` with VL off, `VANILLA_SUN`, and `WATER_CAUSTICS` with `SHADOW_SSRT`.
+  - **Result:** HEAD compiled 784/784 and FIX1 compiled 784/784.
+  - **Voxy patches:** these need Voxy's injected header, so only the new material-ID expression was compiled, as a standalone snippet. It compiled.
+- **Validators:** wrappers (118 files, 23 properties), PERF1 (37 checks), profiles (5 profiles) and `git diff --check` pass.
+- **Not done:** the in-game checks for the image-changing items:
+  - screen-space shadow softness without LOD mods (item 6);
+  - cloud edges against terrain (item 9);
+  - bloomy fog with VL off (item 12);
+  - long-range underwater light shafts (item 13);
+  - the sun with `VANILLA_SUN` on (item 3).
+
 ## Phase PERF5 — Image-preserving Optimizations (Completed; in-game check and FPS unverified)
 
 ### Scope and Acceptance Criteria

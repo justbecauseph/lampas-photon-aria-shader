@@ -93,23 +93,28 @@ mat2x3 raymarch_water_fog(
         ivec2 shadow_texel = ivec2(
             shadow_screen_pos.xy * shadowMapResolution * MC_SHADOW_QUALITY
         );
-        float depth0 = texelFetch(shadowtex0, shadow_texel, 0).x;
-        float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;
-        float shadow = step(
-            float(clamp01(shadow_screen_pos) == shadow_screen_pos) *
-                shadow_screen_pos.z,
-            depth1
-        );
+        float max_distance_traveled_sky =
+            15.0 - 15.0 * eye_skylight + max0(eyeAltitude - world_pos.y);
 
-        // Calculate sunlight transmittance through the volume
-        float distance_traveled = abs(depth0 - shadow_screen_pos.z) *
-            -shadowProjectionInverse[2].z * rcp(SHADOW_DEPTH_SCALE);
+        // Outside the shadow map, use the same values as the no-shadow path
+        // instead of reading undefined out-of-range texels
+        float shadow = 1.0;
+        float distance_traveled = 0.0;
+        float distance_traveled_sky = max_distance_traveled_sky;
 
-        // Guess the transmittance to sky using trigonometry
-        float distance_traveled_sky = distance_traveled * light_dir.y;
-        distance_traveled_sky =
-            min(distance_traveled_sky,
-                15.0 - 15.0 * eye_skylight + max0(eyeAltitude - world_pos.y));
+        if (clamp01(shadow_screen_pos) == shadow_screen_pos) {
+            float depth0 = texelFetch(shadowtex0, shadow_texel, 0).x;
+            float depth1 = texelFetch(shadowtex1, shadow_texel, 0).x;
+            shadow = step(shadow_screen_pos.z, depth1);
+
+            // Calculate sunlight transmittance through the volume
+            distance_traveled = abs(depth0 - shadow_screen_pos.z) *
+                -shadowProjectionInverse[2].z * rcp(SHADOW_DEPTH_SCALE);
+
+            // Guess the transmittance to sky using trigonometry
+            distance_traveled_sky =
+                min(distance_traveled * light_dir.y, max_distance_traveled_sky);
+        }
 #else
 #define shadow 1.0
 #define distance_traveled 0.0

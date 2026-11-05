@@ -179,7 +179,7 @@ float get_screen_space_shadows(
         gbufferProjectionInverse,
         vec3(position_screen_xy, depth),
         position_view,
-        view_light_dir,
+        ray_dir,
         has_sss,
         dither,
         sss_depth
