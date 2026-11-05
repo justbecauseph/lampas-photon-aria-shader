@@ -200,7 +200,7 @@ Every item below was confirmed against the source during validation.
    - **Fix:** `uint(max0(…))`, as in `include/vertex/utility.glsl:7`.
 8. **`VL_RENDER_SCALE` broken except at 0.5.** `program/c0_vl.fsh:128-130`, `settings.glsl:310`, `shaders.properties:285-286`
    - **Now:** `colortex6`/`colortex7` are fixed at 0.5× size, but the depth texel is divided by `VL_RENDER_SCALE`. At 0.75, depth comes from only the lower-left 2/3 of the screen.
-   - **Owner decision required:** remove the option, or support only values ≤ 0.5 with a scaled viewport and scaled `c1` UVs.
+   - **Owner decision:** support only values ≤ 0.5. Implemented as Phase FIX1.8 (see `PROGRESS.md`): `c0` fills only `VL_RENDER_SCALE / 0.5` of the fog buffers, every reader scales and clamps its coordinates to that region, and the option is now in the Fog menu.
 9. **Cloud depth footprints skip the centre.** `program/d1_clouds.fsh:131-153`, `d2_clouds_upscaling.fsh:109-127`
    - **Now:** the footprints gather at ±2 px. For a pixel-centred coordinate that covers texel offsets {−2, −1, +2, +3} and skips 0 and +1, including the pixel itself in `d2`.
    - **Fix:** use ±1 px offsets for a contiguous 4×4. This changes the image.

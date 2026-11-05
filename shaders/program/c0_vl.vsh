@@ -63,6 +63,8 @@ uniform float desert_sandstorm;
 #include "/include/weather/fog.glsl"
 #endif
 
+#include "/include/fog/vl_buffer.glsl"
+
 void main() {
     uv = gl_MultiTexCoord0.xy;
 
@@ -77,6 +79,8 @@ void main() {
     fog_params = get_fog_parameters(get_weather());
 #endif
 
-    vec2 vertex_pos = gl_Vertex.xy;
+    // Only fill the part of the half-resolution fog buffers that matches
+    // VL_RENDER_SCALE; uv still spans the whole screen across it
+    vec2 vertex_pos = gl_Vertex.xy * vl_buffer_scale;
     gl_Position = vec4(vertex_pos * 2.0 - 1.0, 0.0, 1.0);
 }

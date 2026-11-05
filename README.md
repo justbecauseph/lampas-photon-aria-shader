@@ -65,6 +65,7 @@ This repository provides a dedicated Iris dimension specialization for these def
   - Cloud upscaling: contiguous 4×4 depth footprints and the correct history channel on disocclusion.
   - Screen-space shadows jitter their rays without LOD mods, as they already did with Voxy/DH.
   - Bloomy fog without volumetric light follows the analytic fog.
+  - **Fog → VL Render Scale** works and is in the menu, with values from 0.25 to 0.50 (default 0.50). Lower values render volumetric fog at a smaller resolution. Upstream's values above 0.5 sampled the wrong part of the screen.
 
 ---
 

@@ -1,6 +1,7 @@
 #if !defined INCLUDE_LIGHTING_SPECULAR_LIGHTING
 #define INCLUDE_LIGHTING_SPECULAR_LIGHTING
 
+#include "/include/fog/vl_buffer.glsl"
 #include "/include/lighting/bsdf.glsl"
 #include "/include/misc/lod_mod_support.glsl"
 #include "/include/misc/raytracer.glsl"
@@ -256,7 +257,10 @@ vec3 trace_specular_ray(
 
         vec3 reflection = textureLod(colortex5, hit_uv_prev, mip_level).rgb;
 
-        vec3 fog_scattering_previous = texture(colortex7, hit_uv_prev).rgb;
+        vec3 fog_scattering_previous = texture(
+            colortex7,
+            vl_buffer_coord(hit_uv_prev, vec2(textureSize(colortex7, 0)))
+        ).rgb;
 
 #if defined WORLD_OVERWORLD
 #ifdef VL

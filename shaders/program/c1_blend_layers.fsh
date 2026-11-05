@@ -139,6 +139,7 @@ uniform float time_midnight;
 #include "/include/utility/fast_math.glsl"
 #include "/include/utility/space_conversion.glsl"
 #include "/include/misc/voxy_merged_depth.glsl"
+#include "/include/fog/vl_buffer.glsl"
 
 #ifdef WORLD_OVERWORLD
 #include "/include/fog/overworld/analytic.glsl"
@@ -191,17 +192,18 @@ vec3 blend_layers_with_fog(
 }
 
 // https://iquilezles.org/www/articles/texture/texture.htm
+// Samples a volumetric fog buffer at a screen uv (see vl_buffer.glsl)
 vec4 smooth_filter(sampler2D sampler, vec2 coord) {
     vec2 res = vec2(textureSize(sampler, 0));
 
-    coord = coord * res + 0.5;
+    coord = coord * vl_buffer_scale * res + 0.5;
 
     vec2 i, f = modf(coord, i);
     f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     coord = i + f;
 
     coord = (coord - 0.5) / res;
-    return texture(sampler, coord);
+    return texture(sampler, vl_buffer_clamp(coord, res));
 }
 
 void main() {

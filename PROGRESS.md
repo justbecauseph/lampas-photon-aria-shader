@@ -1,5 +1,54 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase FIX1.8 — VL Render Scale at 0.5 and Below (Completed; in-game check pending)
+
+### Scope and Acceptance Criteria
+
+- **Owner decision:** support only `VL_RENDER_SCALE` values of 0.5 and below (FIX1 item 8).
+- **Problem:**
+  - `colortex6` and `colortex7` are fixed at half resolution. `colortex6` also holds the AO history, so the buffers can't be resized.
+  - `c0_vl` always covers the whole buffer but divides its depth lookup by `VL_RENDER_SCALE`, so any value other than 0.5 reads the wrong screen area.
+  - The option was also missing from every menu and slider list (upstream too), so it could only be changed in the config file.
+- **Scope:**
+  1. `settings.glsl`: allowed values become 0.25–0.50 in steps of 0.01. The default stays 0.50.
+  2. New `include/fog/vl_buffer.glsl` with `vl_buffer_scale = VL_RENDER_SCALE / 0.5` (the fraction of the buffer that `c0` fills) and a coordinate helper. Below 0.5, the helper keeps samples half a texel inside the filled region.
+  3. `c0_vl.vsh` draws its quad over that fraction of the buffer. The fragment shader's depth lookup is already correct.
+  4. `c1_blend_layers.fsh` (fog blend) and `specular_lighting.glsl` (previous-frame fog in reflections) read the buffers through the scale and the clamp.
+  5. Expose the option: add it to the Fog screen in place of an `<empty>` slot, add it to `sliders`, and give it an English comment.
+- **Acceptance:**
+  - At the default 0.50 the image is unchanged: the scale is exactly 1.0 and the clamp is compiled out.
+  - Below 0.5, fog covers the whole screen with no offset or stretching, and no bilinear sample reads texels `c0` didn't write.
+  - Texels outside the filled region are never read: `c1` and the reflection read clamp to the region, and the AO history doesn't use the side `c0` writes.
+  - Wrapper, profile and PERF1 validators, `validate_compile.py --baseline HEAD` (also with `VL_RENDER_SCALE` at 0.25 and 0.40) and `git diff --check` pass.
+  - In-game check by the owner at 0.50 and at a lower value.
+
+### Implementation
+
+- **`include/fog/vl_buffer.glsl` (new):**
+  - `vl_buffer_scale = VL_RENDER_SCALE / 0.5`.
+  - `vl_buffer_clamp(coord, res)`: only when the scale is below 1, it clamps to `[0.5, floor(res × scale) − 0.5]` texels.
+  - `vl_buffer_coord(uv, res)` combines the two.
+- **`c0_vl.vsh`:** the quad's vertices are multiplied by `vl_buffer_scale`. `uv` still runs from 0 to 1 across the quad, which matches the fragment shader's existing depth lookup (`gl_FragCoord × taau_render_scale / VL_RENDER_SCALE`).
+- **`c1_blend_layers.fsh`:** `smooth_filter` multiplies the coordinate by `vl_buffer_scale` before its quintic remap, and clamps after it. Its only callers are the two fog-buffer reads.
+- **`specular_lighting.glsl`:** the previous-frame fog scattering read in screen-space reflections uses `vl_buffer_coord`. That covers `deferred4`, `gbuffers_water` and the other translucent programs, `dh_water`, and the Voxy translucent patch (`voxy.json` already lists `colortex7`).
+- **Option and menu:**
+  - `settings.glsl` allows 0.25–0.50 in steps of 0.01; the default is 0.50.
+  - `screen.fog` lists `VL_RENDER_SCALE` in its first `<empty>` slot, so the layout is unchanged, and `sliders` includes it.
+  - `en_US.lang` has a comment for it. The other languages already have names for it.
+  - The option was in no menu before, so a saved value above 0.5 is unlikely.
+- **Default path:** at 0.50, `vl_buffer_scale` is exactly 1.0. Every multiply by it is exact, and the clamp branch is a constant `false`, so the default image is unchanged.
+- **AO history** (from the flip order): `c0` writes the side of `colortex6` that held the previous frame's AO history. `d3` has already read that side this frame and overwrites it in full next frame, so texels outside the fog region are never read.
+
+### Validation
+
+- **`validate_compile.py --baseline HEAD`:** 4,616 variants at the default scale, 0 regressions.
+- **`--set VL_RENDER_SCALE=0.25` and `=0.40`** on `composite`, `composite1`, `deferred4`, `gbuffers_water` and `dh_water` (vertex and fragment where present), with the default, `high` and `ultra` profiles and Voxy and DH variants: 228 variants each, 0 failures.
+- **Numerical model:** buffer widths of 600–2,000 texels at every allowed scale, 10,426 cases.
+  - The clamp region never extends past the pixels `c0` rasterises.
+  - `c0`'s texel centres and `c1`'s sample points agree to within 2.3e-13 texels.
+- **Validators:** wrappers, profiles, PERF1 (37 checks) and `git diff --check` pass.
+- **Not done:** in-game check at 0.50 (unchanged) and at a lower value such as 0.33 (fog covers the full screen, softer but not offset).
+
 ## Phase B3.6 — Voxy Surfaces Beyond the Vanilla Far Plane (Completed)
 
 ### Scope and Acceptance Criteria

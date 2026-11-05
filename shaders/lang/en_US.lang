@@ -415,6 +415,7 @@ option.VL                                   = Volumetric Fog
 option.LPV_VL.comment                       = Light sources illuminate the fog. Requires Colored Lights! 
 option.VL.comment                           = Adds light shafts and variable fog density
 option.VL_RENDER_SCALE                      = VL Render Scale
+option.VL_RENDER_SCALE.comment              = Resolution scale of the volumetric fog, relative to the screen. 0.50 (the default) renders fog at half the width and height; lower values are faster but softer.\nRequires volumetric fog!
 option.AIR_FOG_CLOUDY_NOISE                 = Cloudy Fog
 option.AIR_FOG_CLOUDY_NOISE.comment         = Subtle cloudy shapes in the fog, best visible in the morning.\nRequires volumetric fog!
 option.AIR_FOG_COLORED_LIGHT_SHAFTS         = Colored Light Shafts
