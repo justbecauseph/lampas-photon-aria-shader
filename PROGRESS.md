@@ -1,6 +1,6 @@
 # Photon Shader for Lampas Aria — Progress Log
 
-## Phase B3.6 — Voxy Surfaces Beyond the Vanilla Far Plane (Implemented; in-game check pending)
+## Phase B3.6 — Voxy Surfaces Beyond the Vanilla Far Plane (Completed)
 
 ### Scope and Acceptance Criteria
 
@@ -29,9 +29,7 @@
 - **`--extended --profiles default --variants voxy,dh`** on `composite`, `composite1`, `composite2`, `composite4`, `deferred1`–`deferred4`, `final` and `gbuffers_water`: 1,308 variants, 0 regressions.
 - **Voxy patches:** `voxy_translucent.glsl` includes `lod_mod_support.glsl`. Voxy declares `gbufferProjectionInverse` from `voxy.json`, and the patch already used it. The patch files themselves are not compiled by the tool.
 - **Validators:** wrappers, PERF1 (37 checks), profiles and `git diff --check` pass.
-- **Not done:**
-  - The in-game A/B against upstream at the owner's screenshot positions, plus one other render distance.
-  - Checks that near and mid-distance Voxy water, the B3.3.1 shoreline, and Camerapture and distant-decoration occlusion are unchanged.
+- **In game (owner):** all checks approved. These covered the screenshot positions compared with upstream (water and clouds now continue to the horizon), no seam near the far plane, unchanged near and mid-distance Voxy water and shoreline, and a second render distance. No GPU timing was taken.
 
 ## Tooling — glslang Compile Validator (Completed)
 
