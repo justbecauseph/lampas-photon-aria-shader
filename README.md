@@ -12,7 +12,7 @@ Unpatched Photon v1.3b under Iris treats `lampas:aria` as generic `world0` (Over
 2. **Under-Island Black Atmospheric Void**: Unpatched Photon derives camera skylight from vertical ceiling clearance (`eyeBrightness.y / 240.0`). Standing underneath any floating island forces `eye_skylight \approx 0.0`. In the upstream analytic atmosphere, atmospheric in-scattering is scaled by `max(skylight, eye_skylight)`. When standing under an island overhang, in-scattering is multiplied by zero, causing the surrounding daytime sky dome and distant island silhouettes against the horizon to collapse into a pitch-black void (`#000000`).
 3. **Low-Altitude Cloud Temporal Artifacts**: Re-anchoring clouds to a thin shell at $Y \in [64, 68]$ triggers checkerboard reprojection and history invalidation artifacts in high-ratio temporal upscaling (16×) when crossing cloud boundaries.
 
-This repository provides a dedicated Iris dimension specialization for these defects, alongside shared rendering optimizations and Voxy compatibility fixes. Standard Overworld, Nether, and End dimension routing is retained.
+This repository provides a dedicated Iris dimension specialization for these defects, alongside shared rendering optimizations, Voxy compatibility fixes, and bug fixes ported from upstream Photon through v1.4. Standard Overworld, Nether, and End dimension routing is retained.
 
 ---
 
@@ -43,12 +43,28 @@ This repository provides a dedicated Iris dimension specialization for these def
 - **Voxy LOD Depth Compatibility**:
   - Configured `voxy.json` with `excludeLodsFromVanillaDepth: false` to ensure seamless depth integration between Voxy LOD terrain and block entities.
 
+- **Profiles**:
+  - **Lowest**, **Low**, **Medium**, **High** (default) and **Ultra**.
+  - **Lowest** targets integrated and GTX 1050-class GPUs: no sun shadows, TAAU at 0.67 render scale, fewer cloud layers and march steps, and no cloud shadows.
+  - Low/Medium/High/Ultra select None/SSAO/GTAO/GTAO for shader ambient occlusion. Entity shadows are on only in Ultra.
+  - Every profile lists the full set of options it controls, so switching profiles never leaves another profile's values behind.
+
 - **Performance Improvements**:
   - Aria skips fully faded cloud shadows, empty cloud/fog marches, and temporal AO filtering when shader AO is disabled.
   - Bloom uses five filtered samples in tile interiors while preserving its original edge filter. LPV colored lighting skips neighbor reads for voxels with zero light transmission.
-  - Low/Medium/High/Ultra presets explicitly select None/SSAO/GTAO/GTAO for shader ambient occlusion.
+  - The opaque shadow pass casts without a texture read or `discard`, so the GPU can reject hidden fragments early. With colored shadows off (Low, Medium), shadow-color work and the per-frame `shadowcolor0` clear are skipped.
+  - Work that cannot change the image is skipped: empty cloud layers, crepuscular rays at zero strength, volumetric-light shadow reads outside the shadow map, invisible stars, FXAA corner reads on non-edge pixels, rain puddles on surfaces that cannot hold them, and cloud reads in the blend pass for opaque pixels.
+  - Frame-uniform work (exposure, vignette, fog phase functions, shadow-filter disc rotation) is computed once instead of per pixel or per step.
   - **Water → Water Waves → Distant Water Detail** optionally fades water surface detail and screen-space reflections with distance. The default **Off** preserves full detail. Selecting a distance retains full detail through half that distance, then fades to flat surface normals and sky reflections; at the selected distance, procedural normal/parallax and water reflection ray work is skipped. This trades distant visual detail for less shading work and applies consistently to regular water and the composite Voxy/DH water path.
-  - Standalone shader compilation and targeted source/numerical checks are recorded in `PROGRESS.md`. Performance gains and visual equivalence have not been measured in a live client.
+  - **Visible change:** with Minecraft's **Cutout Leaves** option off, leaves are drawn opaque and now also cast solid shadows instead of holey ones.
+  - Standalone shader compilation and targeted source/numerical checks are recorded in `PROGRESS.md`. Performance gains have not been measured in a live client.
+
+- **Bug Fixes Beyond Upstream**:
+  - Out-of-bounds reads and writes: the auto-exposure histogram, Voxy material IDs below 10000, shadow-pass material IDs for unmapped blocks, and underwater volumetric light outside the shadow map.
+  - Uninitialized values in the vanilla-sun halo cut-out (now atlas-aware for Minecraft 26.1+) and in water parallax.
+  - Cloud upscaling: contiguous 4×4 depth footprints and the correct history channel on disocclusion.
+  - Screen-space shadows jitter their rays without LOD mods, as they already did with Voxy/DH.
+  - Bloomy fog without volumetric light follows the analytic fog.
 
 ---
 
@@ -56,10 +72,11 @@ This repository provides a dedicated Iris dimension specialization for these def
 
 ### Prerequisites
 
-- **Minecraft**: 1.21.x
+- **Minecraft**: 26.2
 - **Mod Loader**: Fabric Loader
-- **Shader Loader**: [Iris Shaders](https://irisshaders.dev/) (v1.11.2+)
+- **Shader Loader**: [Iris Shaders](https://irisshaders.dev/) 1.11.4 with Sodium 0.9.2
 - **Dimension Mod**: Lampas Aria (`lampas:aria`)
+- **Optional**: Voxy 0.2.19 for LOD terrain. Voxy currently needs lampas2-overrides 1.0.6 or later, which converts its projection to the forward-Z depth this pack expects; without it, LOD terrain draws into the sky.
 
 ### Adding to Minecraft
 
@@ -70,15 +87,21 @@ This repository provides a dedicated Iris dimension specialization for these def
 
 ### Development / Symlink Setup
 
-For active shader development, create a directory junction directly into your `.minecraft/shaderpacks/` directory:
+For active shader development, link the repository into your `shaderpacks/` directory with a directory junction. Iris reads the working tree directly, so press **R** in game to reload after an edit.
 
 ```powershell
-cmd /c mklink /J "$env:APPDATA\.minecraft\shaderpacks\lampas-photon-aria" "C:\path\to\lampas-photon-aria-shader"
+New-Item -ItemType Junction -Path "$env:APPDATA\.minecraft\shaderpacks\lampas-photon-aria-dev" -Target "C:\path\to\lampas-photon-aria-shader"
 ```
+
+For the Lampas launcher, the `shaderpacks/` directory is `%LOCALAPPDATA%\Packages\59450PUPProgGuild.LampasLauncher_bdagfy06snw12\LocalCache\.minecraft-lampas\shaderpacks`. Deleting the junction removes only the link, not the repository.
 
 ---
 
 ## Development & CI/CD
+
+### Workflow
+
+Work is planned in phases. [`AGENTS.md`](AGENTS.md) sets the rules: define scope and acceptance criteria first, record progress in [`PROGRESS.md`](PROGRESS.md), run the validators below before every commit that touches `shaders/` or `tools/`, and commit and push at the end of each phase for review. [`PLAN.md`](PLAN.md) holds the current plan.
 
 ### Validation
 
