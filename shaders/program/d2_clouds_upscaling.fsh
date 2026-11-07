@@ -250,8 +250,18 @@ void main() {
 
     // Early exit if clouds covered by terrain
     if (depth != 1.0) {
-        float view_distance_squared =
-            length_squared(screen_to_view_space(vec3(uv, depth), true));
+#ifdef LOD_MOD_ACTIVE
+        // Voxy terrain beyond the vanilla far plane has a saturated merged
+        // depth, so measure it with the Voxy depth (see is_lod_terrain)
+        vec3 terrain_view_pos = screen_to_view_space(
+            vec3(uv, is_lod ? depth_lod : depth),
+            true,
+            is_lod
+        );
+#else
+        vec3 terrain_view_pos = screen_to_view_space(vec3(uv, depth), true);
+#endif
+        float view_distance_squared = length_squared(terrain_view_pos);
         if (view_distance_squared < sqr(closest_distance) || is_hand) {
 #ifdef WORLD_ARIA
             clouds_history = vec4(0.0, 0.0, 0.0, 1.0);

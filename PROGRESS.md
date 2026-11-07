@@ -1,5 +1,33 @@
 # Photon Shader for Lampas Aria — Progress Log
 
+## Phase B3.6.1 — Cloud Holes Above the Vanilla Far Plane (Implemented; in-game check pending)
+
+### Scope and Acceptance Criteria
+
+- **Symptom** (in game, 2026-11-07, Overworld at Y 1303, 16 chunks, Voxy): the cumulus deck below the camera has sharp-edged holes showing the terrain.
+- **Cause:**
+  - The cumulus deck (Y ≈ 183–303) is 1,000–1,120 blocks below the camera, straddling the saturated merged depth at about 1,022 blocks.
+  - Since B3.6, `d1` marches clouds against Voxy's real terrain distance (about 1,240 blocks), so some cloud pixels get apparent distances above 1,022.
+  - `d2_clouds_upscaling.fsh` still decides "clouds covered by terrain" from the merged `depthtex1` with the vanilla projection, which saturates at about 1,022 blocks. It drops every cloud pixel with an apparent distance beyond that, which leaves the holes.
+  - Before B3.6, `d1` already cut clouds at about 1,022 blocks, so this check never triggered there. B3.6 exposed it.
+- **Scope:** in that `d2` check, when `is_lod` is true, measure the terrain distance with Voxy's depth and projection. Elsewhere it is unchanged:
+  - non-LOD pixels and the no-LOD build use the same expression as before;
+  - under DH, `is_lod` needs `depth >= 1`, so this branch never runs for LOD pixels;
+  - Voxy pixels inside the vanilla far plane aren't `is_lod`, so they're unchanged.
+- **Acceptance:**
+  - At the screenshot position (Y 1303), the cloud deck has no terrain holes. Clouds at normal altitudes and the B3.6 checks are unchanged.
+  - Validators, `validate_compile.py --baseline HEAD` and `git diff --check` pass.
+
+### Implementation and Validation
+
+- **`d2_clouds_upscaling.fsh`:** under `LOD_MOD_ACTIVE`, the covered-by-terrain check now measures distance with `screen_to_view_space(vec3(uv, is_lod ? depth_lod : depth), true, is_lod)`. `depth_lod` is `lod_depth_tex_shading`, the same depth `d2` already uses for the combined depth it writes. The no-LOD build keeps the original expression.
+- **Rest of the merged-depth path:** `c0` VL (`is_voxy_surface`), `d1`, `d3`, `d4` (combined depth from `d2`), `c1`, `c2`, `c4` and `gbuffers_all_translucent` were already covered by B3.6. In `c0_vl.fsh`, `view_back_pos` is unused, so it is not affected.
+- **Results:**
+  - `validate_compile.py --baseline HEAD`: 4,616 variants, 0 regressions.
+  - `deferred2` with `--extended --variants voxy,dh`: 0 regressions.
+  - Wrapper, PERF1 and profile validators and `git diff --check` pass.
+- **Not done:** the in-game check at Y 1303 and at a normal altitude.
+
 ## Phase FIX1.8 — VL Render Scale at 0.5 and Below (Completed; in-game check pending)
 
 ### Scope and Acceptance Criteria
