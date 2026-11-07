@@ -1,6 +1,17 @@
 # Photon Shader for Lampas Aria — Progress Log
 
-## Phase B3.6.1 — Cloud Holes Above the Vanilla Far Plane (Implemented; in-game check pending)
+## Release v1.2.1 (2026-11-07)
+
+- **Contents:** the owner requested a release after confirming B3.6.1 in game. It covers everything since v1.1.2: PERF5, FIX1, the compile validator, B3.6, FIX1.8 and B3.6.1.
+- **Existing v1.2.0:** a lightweight tag `v1.2.0` at `888d399` (FIX1.8) was already on GitHub, with a published release from workflow run 42121366974. Its assets have sha256 `06d74f1a…a7f6882`. It was not recorded here and lacks B3.6.1. It was left unchanged, and this release is v1.2.1.
+- **Pre-tag validation on `5fef767`:**
+  - wrappers (118 files, 23 properties), profiles (5) and PERF1 (37 checks) pass;
+  - `validate_compile.py`: 4,616 variants, 0 failures;
+  - `--extended --profiles default --variants voxy,dh`: 13,836 variants, 0 failures;
+  - `git diff --check` passes.
+- **In game:** the owner approved B3.6 and B3.6.1. Not checked in game: the PERF5 screenshot comparison and leaf shadows, FIX1's image-changing items other than the sun (`VANILLA_SUN` was on during testing), and FIX1.8 below 0.5. No speed-up is claimed.
+
+## Phase B3.6.1 — Cloud Holes Above the Vanilla Far Plane (Completed)
 
 ### Scope and Acceptance Criteria
 
@@ -26,7 +37,7 @@
   - `validate_compile.py --baseline HEAD`: 4,616 variants, 0 regressions.
   - `deferred2` with `--extended --variants voxy,dh`: 0 regressions.
   - Wrapper, PERF1 and profile validators and `git diff --check` pass.
-- **Not done:** the in-game check at Y 1303 and at a normal altitude.
+- **In game (owner, 2026-11-07):** confirmed fixed.
 
 ## Phase FIX1.8 — VL Render Scale at 0.5 and Below (Completed; in-game check pending)
 
