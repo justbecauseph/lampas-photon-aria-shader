@@ -10,6 +10,9 @@
   - `--extended --profiles default --variants voxy,dh`: 13,836 variants, 0 failures;
   - `git diff --check` passes.
 - **In game:** the owner approved B3.6 and B3.6.1. Not checked in game: the PERF5 screenshot comparison and leaf shadows, FIX1's image-changing items other than the sun (`VANILLA_SUN` was on during testing), and FIX1.8 below 0.5. No speed-up is claimed.
+- **Published:** annotated tag `v1.2.1` at `2f09476`. The tag-triggered `Release Package` workflow (run 42336382566) succeeded and published https://github.com/justbecauseph/lampas-photon-aria-shader/releases/tag/v1.2.1, now the Latest release.
+- **Assets:** both have sha256 `e95a54ce…f8ad18`. The downloaded zip has the same 652 files as `git archive v1.2.1 shaders LICENSE`, identical apart from line endings.
+- **Not done:** staging in lampas-pipeline (`pack/custom/lampas-photon-aria.zip`) and publishing to the Portal.
 
 ## Phase B3.6.1 — Cloud Holes Above the Vanilla Far Plane (Completed)
 
