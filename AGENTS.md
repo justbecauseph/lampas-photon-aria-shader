@@ -15,3 +15,7 @@ Validation (before every commit that touches `shaders/` or `tools/`):
 - Record what was run and its result in PROGRESS.md. These are static and standalone-compile checks only: never claim in-game visuals or a speed-up without a test in the client.
 
 DO NOT USE AGY DEVELOPER SKILL
+
+## Lampas knowledgebase (lampas-kb)
+
+`.mcp.json` connects the `lampas-kb` MCP server at `https://kb.lampas.town/mcp`; it needs a token from https://kb.lampas.town/auth/token in the `LAMPAS_KB_TOKEN` environment variable ([kb README](https://github.com/justbecauseph/lampas-two-kb/blob/main/kb/README.md#mcp-server-lampas-kb)). Ask it before stating what is deployed, decided or designed for Lampas 2 outside this repository: take versions from its `status` tool, attribute discussion to the person who said it, and treat plans as intent.
